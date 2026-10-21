@@ -8,6 +8,10 @@ const listQuery = z.object({
   province: z.string().max(10).optional(),
   type: z.enum(['road', 'trail', 'virtual', 'ultra', 'fun_run']).optional(),
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  /** Events with at least one race in this band of distances. */
+  distance: z.enum(['short', '10k', 'half', 'full', 'ultra']).optional(),
+  /** Only events taking registrations right now with a place left. */
+  open: z.enum(['0', '1', 'true', 'false']).transform((v) => v === '1' || v === 'true').optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -30,6 +34,12 @@ export class EventsController {
   @Get()
   list(@Query() query: unknown) {
     return this.events.list(parse(listQuery, query));
+  }
+
+  /** What the search filters can offer: provinces and months that have upcoming events. */
+  @Get('filters')
+  filters() {
+    return this.events.filters();
   }
 
   @Get(':slug')

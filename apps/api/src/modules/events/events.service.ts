@@ -10,9 +10,20 @@ export interface EventListQuery {
   province?: string;
   type?: string;
   month?: string; // YYYY-MM
+  distance?: keyof typeof DISTANCE_BANDS;
+  open?: boolean;
   limit: number;
   offset: number;
 }
+
+/** Distance bands for the search filter, in km: [from, below). A marathon is 42.195 km, so 42–43 is "full". */
+export const DISTANCE_BANDS = {
+  short: [0, 10],
+  '10k': [10, 21],
+  half: [21, 42],
+  full: [42, 43],
+  ultra: [43, 10_000],
+} as const;
 
 type Availability = 'open' | 'almost_full' | 'sold_out' | 'not_open' | 'closed';
 
@@ -50,6 +61,18 @@ export class EventsService {
     if (query.province) add('e.province_code = ?', query.province);
     if (query.type) add('e.event_type = ?', query.type);
     if (query.month) add(`to_char(e.event_date, 'YYYY-MM') = ?`, query.month);
+    if (query.distance) {
+      const [from, below] = DISTANCE_BANDS[query.distance];
+      params.push(from, below);
+      where.push(
+        `EXISTS (SELECT 1 FROM races dr WHERE dr.event_id = e.id AND dr.is_active
+                    AND dr.distance_km >= $${params.length - 1} AND dr.distance_km < $${params.length})`,
+      );
+    }
+    if (query.open) {
+      where.push(`e.registration_opens_at <= now() AND (e.registration_closes_at IS NULL OR e.registration_closes_at > now())
+                  AND EXISTS (SELECT 1 FROM v_race_availability oa WHERE oa.event_id = e.id AND oa.available > 0 AND oa.current_price_satang IS NOT NULL)`);
+    }
     params.push(query.limit, query.offset);
 
     const { rows } = await this.dbs.pool.query(
@@ -92,6 +115,22 @@ export class EventsService {
         };
       }),
     };
+  }
+
+  /** Provinces and months that have upcoming published events, with how many each, for the search filters. */
+  async filters() {
+    const upcoming = `status = 'published' AND event_date >= current_date`;
+    const [provinces, months] = await Promise.all([
+      this.dbs.pool.query<{ code: string; count: number }>(
+        `SELECT province_code AS code, count(*)::int AS count FROM events
+          WHERE ${upcoming} AND province_code IS NOT NULL GROUP BY province_code ORDER BY count DESC, province_code`,
+      ),
+      this.dbs.pool.query<{ month: string; count: number }>(
+        `SELECT to_char(event_date, 'YYYY-MM') AS month, count(*)::int AS count FROM events
+          WHERE ${upcoming} GROUP BY 1 ORDER BY 1`,
+      ),
+    ]);
+    return { provinces: provinces.rows, months: months.rows };
   }
 
   async getBySlug(slug: string) {
