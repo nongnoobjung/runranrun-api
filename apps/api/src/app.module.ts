@@ -19,6 +19,7 @@ import { OrgBibsService } from './modules/org/org-bibs.service';
 import { OrgCouponsService } from './modules/org/org-coupons.service';
 import { OrgEventsService } from './modules/org/org-events.service';
 import { OrgMembersService } from './modules/org/org-members.service';
+import { OrgQuestionsService } from './modules/org/org-questions.service';
 import { OrgRegistrationsService } from './modules/org/org-registrations.service';
 import { OrdersController } from './modules/orders/orders.controller';
 import { OrdersService } from './modules/orders/orders.service';
@@ -83,6 +84,7 @@ export class AppModule {
         OrgCouponsService,
         OrgRegistrationsService,
         OrgMembersService,
+        OrgQuestionsService,
         OrgBibsService,
       ],
       exports: [CONFIG, DbService],

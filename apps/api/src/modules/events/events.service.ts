@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '../../db/db.service';
 import { problems } from '../../common/problem';
+import { loadQuestions, publicQuestion } from '../org/org-questions.service';
 
 export interface EventListQuery {
   q?: string;
@@ -115,6 +116,8 @@ export class EventsService {
       [e.id],
     );
 
+    const questions = await loadQuestions(this.dbs.pool, e.id);
+
     return {
       id: e.id,
       slug: e.slug,
@@ -144,6 +147,8 @@ export class EventsService {
         perRegistration: p.per_registration,
         variants: (p.variants as { priceDeltaSatang: string }[]).map((v) => ({ ...v, priceDeltaSatang: Number(v.priceDeltaSatang) })),
       })),
+      /** The organiser's extra questions; each runner answers the ones for their race. */
+      questions: questions.map(publicQuestion),
     };
   }
 
