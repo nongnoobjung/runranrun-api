@@ -140,6 +140,21 @@ export class InventoryService {
     }
   }
 
+  /** Puts a paid place back on sale: its race, its price tier and its shirt size each sell one fewer. */
+  async releaseRegistration(client: PoolClient, registrationId: string): Promise<void> {
+    const { rows } = await client.query<{ race_id: string; shirt_variant_id: string | null; price_tier_id: string | null }>(
+      `SELECT r.race_id, r.shirt_variant_id, oi.price_tier_id
+         FROM registrations r LEFT JOIN order_items oi ON oi.id = r.order_item_id
+        WHERE r.id = $1`,
+      [registrationId],
+    );
+    const r = rows[0];
+    if (!r) return;
+    await client.query('UPDATE races SET sold = sold - 1 WHERE id = $1 AND sold > 0', [r.race_id]);
+    if (r.price_tier_id) await client.query('UPDATE price_tiers SET sold = sold - 1 WHERE id = $1 AND sold > 0', [r.price_tier_id]);
+    if (r.shirt_variant_id) await client.query('UPDATE product_variants SET sold = sold - 1 WHERE id = $1 AND sold > 0', [r.shirt_variant_id]);
+  }
+
   /** Gives back only the shirt/add-on holds of a session, e.g. when the runner changes sizes. */
   async releaseVariantHolds(client: PoolClient, sessionId: string): Promise<void> {
     const holds = await client.query(
