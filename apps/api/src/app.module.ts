@@ -13,6 +13,11 @@ import { HoldReleaseService } from './modules/inventory/hold-release.service';
 import { InventoryService } from './modules/inventory/inventory.service';
 import { JobsService } from './modules/jobs/jobs.service';
 import { MeController } from './modules/me/me.controller';
+import { OrgAccessService } from './modules/org/org-access.service';
+import { OrgController } from './modules/org/org.controller';
+import { OrgCouponsService } from './modules/org/org-coupons.service';
+import { OrgEventsService } from './modules/org/org-events.service';
+import { OrgRegistrationsService } from './modules/org/org-registrations.service';
 import { OrdersController } from './modules/orders/orders.controller';
 import { OrdersService } from './modules/orders/orders.service';
 import { FakeGateway } from './modules/payments/fake.gateway';
@@ -50,6 +55,7 @@ export class AppModule {
       OrdersController,
       WebhooksController,
       MeController,
+      OrgController,
       ...(config.ENABLE_DEV_ENDPOINTS ? [DevController] : []),
     ];
     return {
@@ -70,6 +76,10 @@ export class AppModule {
         PaymentsService,
         PaymentConfirmationService,
         JobsService,
+        OrgAccessService,
+        OrgEventsService,
+        OrgCouponsService,
+        OrgRegistrationsService,
       ],
       exports: [CONFIG, DbService],
     };

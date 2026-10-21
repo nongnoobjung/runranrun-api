@@ -158,3 +158,26 @@ export const RIVERSIDE_NIGHT_RUN: EventFixture = {
   ],
   coupons: [{ code: 'RUN10', type: 'percent', value: 1000, usageLimit: 500, usagePerUser: 1 }],
 };
+
+export const RIVERSIDE_ORGANIZER_EMAIL = 'organizer@riverside.example';
+
+/** Makes the user with this email (created if needed) an accepted member of the organisation. */
+export async function addOrgMember(
+  pool: Pool,
+  organizationId: string,
+  email: string,
+  role: 'owner' | 'admin' | 'finance' | 'staff' | 'viewer' = 'owner',
+): Promise<string> {
+  const user = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, display_name) VALUES ($1, $2)
+     ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+     RETURNING id`,
+    [email, email.split('@')[0]],
+  );
+  await pool.query(
+    `INSERT INTO org_members (organization_id, user_id, role, accepted_at) VALUES ($1, $2, $3, now())
+     ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role, accepted_at = COALESCE(org_members.accepted_at, now())`,
+    [organizationId, user.rows[0].id, role],
+  );
+  return user.rows[0].id;
+}
