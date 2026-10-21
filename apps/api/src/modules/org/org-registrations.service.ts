@@ -5,6 +5,7 @@ import { decryptPii } from '../../common/crypto';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { writeAudit } from './org-access.service';
+import { loadQuestions, Question } from './org-questions.service';
 
 export const listQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
@@ -68,6 +69,7 @@ export class OrgRegistrationsService {
   async get(orgId: string, registrationId: string) {
     const r = await this.load(orgId, registrationId);
     const snap = r.runner_snapshot as Record<string, string | null>;
+    const questions = await loadQuestions(this.dbs.pool, r.event_id, true);
     const checkins = await this.dbs.pool.query(
       `SELECT checkin_type, scanned_at, picked_up_by, shirt_size_given, voided_at FROM checkins
         WHERE registration_id = $1 ORDER BY scanned_at`,
@@ -90,6 +92,7 @@ export class OrgRegistrationsService {
       idDocMasked: maskIdDoc(snap.idDocLast4 ?? ''),
       bloodType: snap.bloodType,
       emergency: { name: snap.emergencyName, phone: snap.emergencyPhone },
+      answers: answerList(questions, r.answers),
       pricePaidSatang: Number(r.price_paid_satang),
       order: r.order_no
         ? { orderNo: r.order_no, status: r.order_status, totalSatang: Number(r.order_total), paidAt: r.paid_at, buyerName: r.buyer_name, buyerEmail: r.buyer_email }
@@ -115,7 +118,7 @@ export class OrgRegistrationsService {
     const { where, params } = filters(eventId, query);
     const { rows } = await this.dbs.pool.query(
       `SELECT ${LIST_COLUMNS}, r.birth_date::text AS birth_date, r.nationality, r.runner_snapshot->>'emergencyName' AS emergency_name,
-              r.runner_snapshot->>'emergencyPhone' AS emergency_phone, r.price_paid_satang
+              r.runner_snapshot->>'emergencyPhone' AS emergency_phone, r.price_paid_satang, r.answers
          ${LIST_FROM}
         WHERE ${where}
         ORDER BY ra.sort_order, r.bib_number NULLS LAST, r.registration_no`,
@@ -125,10 +128,12 @@ export class OrgRegistrationsService {
       actorId: userId, organizationId: orgId, eventId, action: 'registrations.export', entityType: 'event', entityId: eventId,
       after: { filters: query, rows: rows.length },
     });
+    // One column per question, headed by its label, including questions removed after runners answered them.
+    const questions = (await loadQuestions(this.dbs.pool, eventId, true)).filter((q) => q.isActive || rows.some((r) => q.key in r.answers));
     const header = [
       'registration_no', 'bib', 'status', 'race', 'first_name_th', 'last_name_th', 'first_name_en', 'last_name_en', 'gender',
       'birth_date', 'age', 'age_group', 'nationality', 'shirt_size', 'email', 'phone', 'emergency_name', 'emergency_phone',
-      'order_no', 'price_paid_baht', 'kit_picked_up_at',
+      'order_no', 'price_paid_baht', 'kit_picked_up_at', ...questions.map((q) => q.label),
     ];
     const lines = rows.map((r) =>
       [
@@ -136,6 +141,7 @@ export class OrgRegistrationsService {
         r.gender, r.birth_date, r.age_on_race_day, r.age_group, r.nationality, r.shirt_size, r.email, r.phone, r.emergency_name,
         r.emergency_phone, r.order_no, (Number(r.price_paid_satang) / 100).toFixed(2),
         r.kit_picked_up_at ? new Date(r.kit_picked_up_at).toISOString() : null,
+        ...questions.map((q) => answerText(r.answers[q.key])),
       ].map(csvCell).join(','),
     );
     return `﻿${[header.join(','), ...lines].join('\r\n')}\r\n`;
@@ -182,7 +188,7 @@ export class OrgRegistrationsService {
 
   private async load(orgId: string, registrationId: string) {
     const { rows } = await this.dbs.pool.query(
-      `SELECT ${LIST_COLUMNS}, r.event_id, r.runner_snapshot, r.birth_date::text AS birth_date_text, r.nationality, r.price_paid_satang,
+      `SELECT ${LIST_COLUMNS}, r.event_id, r.runner_snapshot, r.answers, r.birth_date::text AS birth_date_text, r.nationality, r.price_paid_satang,
               o.status AS order_status, o.total_satang AS order_total, o.paid_at, o.buyer_name, o.buyer_email
          ${LIST_FROM}
          JOIN events e ON e.id = r.event_id
@@ -263,6 +269,20 @@ function listView(r: Record<string, any>) {
 
 function checkinView(r: Record<string, any>) {
   return { ...listView(r), emergencyName: r.emergency_name ?? null };
+}
+
+/** The runner's answers in form order, with each question's label. */
+function answerList(questions: Question[], answers: Record<string, unknown>) {
+  return questions
+    .filter((q) => q.key in answers)
+    .map((q) => ({ key: q.key, label: q.label, type: q.type, value: answers[q.key] }));
+}
+
+function answerText(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (Array.isArray(value)) return value.join('; ');
+  if (typeof value === 'boolean') return value ? 'yes' : 'no';
+  return String(value);
 }
 
 function maskIdDoc(last4: string): string {

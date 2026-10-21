@@ -5,6 +5,7 @@ import { encryptPii, hashIdDoc, normaliseIdDoc } from '../../common/crypto';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { SessionItems } from '../checkout/checkout.service';
+import { checkAnswers, loadQuestions } from '../org/org-questions.service';
 import { ageOn, computeTotals, CouponRule, PricedLine } from './pricing';
 
 export interface RunnerInput {
@@ -100,6 +101,10 @@ export class OrdersService {
       }
       return { ...p, age, idDocHash: hashIdDoc(p.runner.idDocNumber, this.config.PII_HASH_KEY) };
     });
+    const questions = await loadQuestions(client, session.event_id);
+    const answerErrors: { path: string; message: string }[] = [];
+    const answers = people.map((p, i) => checkAnswers(questions, p.raceId, p.answers, `participants.${i}.answers`, answerErrors));
+    if (answerErrors.length) throw problems.validation('Some answers to the registration questions are missing or invalid', answerErrors);
     const seen = new Set<string>();
     for (const p of people) {
       const k = `${p.raceId}:${p.idDocHash}`;
@@ -173,7 +178,7 @@ export class OrdersService {
           ageGroup.rows[0]?.id ?? null, JSON.stringify(snapshot), r.firstNameEn.toUpperCase(), r.lastNameEn.toUpperCase(),
           r.firstNameTh ?? null, r.lastNameTh ?? null, r.gender, r.birthDate, p.age, r.nationality.toUpperCase(),
           p.idDocHash, r.email ?? null, r.phone ?? null, p.shirtVariantId ?? null, shirt?.label ?? null,
-          JSON.stringify(p.answers ?? {}), price.priceSatang - lineDiscount,
+          JSON.stringify(answers[i]), price.priceSatang - lineDiscount,
         ],
       );
       await client.query('UPDATE order_items SET registration_id = $2 WHERE id = $1', [item.rows[0].id, reg.rows[0].id]);

@@ -13,6 +13,7 @@ import {
   shirtsSchema,
   tierFieldsSchema,
 } from './org-events.service';
+import { createQuestionSchema, OrgQuestionsService, questionFieldsSchema, reorderSchema } from './org-questions.service';
 import { checkinSchema, listQuerySchema, OrgRegistrationsService } from './org-registrations.service';
 
 const raceCreateSchema = raceFieldsSchema.partial().required({ code: true, nameTh: true, distanceKm: true, capacity: true }).transform((r) => ({
@@ -32,6 +33,7 @@ export class OrgController {
     private readonly events: OrgEventsService,
     private readonly coupons: OrgCouponsService,
     private readonly registrations: OrgRegistrationsService,
+    private readonly questions: OrgQuestionsService,
   ) {}
 
   /** Organisations the caller belongs to. The web app shows the backoffice link when this is not empty. */
@@ -180,6 +182,42 @@ export class OrgController {
   ) {
     const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
     return this.coupons.update(user.id, e.organizationId, e.eventId, parse(uuidSchema, couponId), parse(couponFieldsSchema.partial(), body));
+  }
+
+  @Get(':orgId/events/:eventId/questions')
+  async listQuestions(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'view');
+    return this.questions.list(e.eventId);
+  }
+
+  @Post(':orgId/events/:eventId/questions')
+  async createQuestion(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.questions.create(user.id, e.organizationId, e.eventId, parse(createQuestionSchema, body));
+  }
+
+  @Put(':orgId/events/:eventId/questions/order')
+  async reorderQuestions(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.questions.reorder(user.id, e.organizationId, e.eventId, parse(reorderSchema, body).ids);
+  }
+
+  @Patch(':orgId/events/:eventId/questions/:questionId')
+  async updateQuestion(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Param('questionId') questionId: string,
+    @Body() body: unknown,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.questions.update(user.id, e.organizationId, e.eventId, parse(uuidSchema, questionId), parse(questionFieldsSchema.partial(), body));
+  }
+
+  @Delete(':orgId/events/:eventId/questions/:questionId')
+  async deleteQuestion(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Param('questionId') questionId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.questions.remove(user.id, e.organizationId, e.eventId, parse(uuidSchema, questionId));
   }
 
   @Get(':orgId/events/:eventId/registrations')
