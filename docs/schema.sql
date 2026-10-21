@@ -178,6 +178,8 @@ CREATE TABLE organizations (
   status           org_status NOT NULL DEFAULT 'pending_kyc',
   kyc_approved_at  TIMESTAMPTZ,
   kyc_approved_by  UUID REFERENCES users(id),
+  review_events    BOOLEAN NOT NULL DEFAULT true,   -- งานแรกต้องรอแอดมินตรวจก่อนเปิดรับสมัคร
+  status_note      TEXT,                            -- เหตุผลที่ระงับ / ส่ง KYC กลับ
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (tax_id IS NULL OR tax_id ~ '^[0-9]{13}$')
@@ -305,6 +307,7 @@ CREATE TABLE events (
   CHECK (registration_closes_at IS NULL OR registration_opens_at IS NULL
          OR registration_closes_at > registration_opens_at)
 );
+CREATE INDEX idx_events_pending_review ON events(submitted_at) WHERE status = 'pending_review';
 CREATE INDEX idx_events_org ON events(organization_id);
 CREATE INDEX idx_events_public ON events(status, event_date) WHERE status IN ('published', 'closed');
 CREATE INDEX idx_events_province_date ON events(province_code, event_date) WHERE status = 'published';
@@ -1079,6 +1082,7 @@ CREATE TABLE settlements (
                       - gateway_fee_satang - withholding_tax_satang + adjustments_satang)
 );
 CREATE INDEX idx_settlements_org ON settlements(organization_id, period_end DESC);
+CREATE INDEX idx_settlements_event ON settlements(event_id, created_at DESC);
 
 ALTER TABLE orders
   ADD CONSTRAINT fk_orders_settlement

@@ -4,9 +4,9 @@ import { DbService } from '../../db/db.service';
 import { writeAudit } from './org-access.service';
 
 /** Orders whose money was taken; refunded ones still count, their refunds are subtracted separately. */
-const PAID = `('paid', 'partially_refunded', 'refunded')`;
+export const PAID = `('paid', 'partially_refunded', 'refunded')`;
 /** Refunds the organiser owes or has already paid back. */
-const OWED = `('approved', 'processing', 'succeeded')`;
+export const OWED = `('approved', 'processing', 'succeeded')`;
 
 export const transactionsQuerySchema = z.object({
   status: z.enum(['all', 'paid', 'refunded', 'pending']).default('all'),

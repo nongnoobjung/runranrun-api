@@ -9,9 +9,9 @@ import { InventoryService } from '../inventory/inventory.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 import { writeAudit } from '../org/org-access.service';
 
-const BANKS = ['KBANK', 'SCB', 'BBL', 'KTB', 'BAY', 'TTB', 'GSB', 'KKP', 'CIMBT', 'UOBT', 'LHBANK', 'BAAC'] as const;
+export const BANKS = ['KBANK', 'SCB', 'BBL', 'KTB', 'BAY', 'TTB', 'GSB', 'KKP', 'CIMBT', 'UOBT', 'LHBANK', 'BAAC'] as const;
 
-const bankSchema = z.object({
+export const bankSchema = z.object({
   bankCode: z.enum(BANKS),
   accountName: z.string().trim().min(2).max(120),
   accountNumber: z.string().trim().transform((v) => v.replace(/[\s-]/g, '')).pipe(z.string().regex(/^\d{10,15}$/, '10–15 digits')),

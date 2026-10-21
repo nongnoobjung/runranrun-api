@@ -41,8 +41,8 @@ export async function createEvent(pool: Pool, f: EventFixture, orgSlug = 'rivers
   try {
     await client.query('BEGIN');
     const org = await client.query<{ id: string }>(
-      `INSERT INTO organizations (slug, name_th, name_en, status, contact_email)
-       VALUES ($1, 'Riverside Sports', 'Riverside Sports', 'active', 'hello@riverside.example')
+      `INSERT INTO organizations (slug, name_th, name_en, status, contact_email, review_events)
+       VALUES ($1, 'Riverside Sports', 'Riverside Sports', 'active', 'hello@riverside.example', false)
        ON CONFLICT (slug) DO UPDATE SET name_th = EXCLUDED.name_th
        RETURNING id`,
       [orgSlug],
@@ -180,4 +180,15 @@ export async function addOrgMember(
     [organizationId, user.rows[0].id, role],
   );
   return user.rows[0].id;
+}
+
+/** Gives the user with this email (created if needed) a platform role, e.g. to use the admin backoffice. */
+export async function setPlatformRole(pool: Pool, email: string, role: 'user' | 'support' | 'finance' | 'admin' | 'superadmin'): Promise<string> {
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, display_name, platform_role) VALUES ($1, $2, $3)
+     ON CONFLICT (email) DO UPDATE SET platform_role = EXCLUDED.platform_role
+     RETURNING id`,
+    [email, email.split('@')[0], role],
+  );
+  return rows[0].id;
 }

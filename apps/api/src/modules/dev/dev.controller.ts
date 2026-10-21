@@ -1,5 +1,6 @@
 import { Body, Controller, Inject, Param, Post } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppConfig, CONFIG } from '../../config';
 import { ProblemException } from '../../common/problem';
@@ -37,6 +38,36 @@ export class DevController {
     );
     const accessToken = await this.jwt.signAsync({ sub: rows[0].id });
     return { userId: rows[0].id, accessToken, expiresIn: this.config.JWT_TTL_SECONDS };
+  }
+
+  /**
+   * A new organiser team, as if it had signed up: waiting for KYC and with its events reviewed, unless told otherwise.
+   * The owner (created if needed) can log in with /dev/login. Lets end-to-end tests run the admin flows on their own data.
+   */
+  @Post('organizations')
+  async createOrganization(@Body() body: unknown) {
+    const input = parse(
+      z.object({
+        nameTh: z.string().trim().min(1).max(120),
+        ownerEmail: z.string().email(),
+        status: z.enum(['pending_kyc', 'active']).default('pending_kyc'),
+        reviewEvents: z.boolean().default(true),
+      }),
+      body,
+    );
+    const slug = `dev-${randomUUID().slice(0, 8)}`;
+    const org = await this.dbs.pool.query<{ id: string }>(
+      `INSERT INTO organizations (slug, name_th, contact_email, status, review_events) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [slug, input.nameTh, input.ownerEmail, input.status, input.reviewEvents],
+    );
+    const user = await this.dbs.pool.query<{ id: string }>(
+      `INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id`,
+      [input.ownerEmail],
+    );
+    await this.dbs.pool.query(`INSERT INTO org_members (organization_id, user_id, role, accepted_at) VALUES ($1, $2, 'owner', now())`, [
+      org.rows[0].id, user.rows[0].id,
+    ]);
+    return { id: org.rows[0].id, slug };
   }
 
   /** Simulates the gateway telling us a charge finished, through the same verification path as a real webhook. */

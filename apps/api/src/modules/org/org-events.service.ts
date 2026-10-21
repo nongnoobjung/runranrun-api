@@ -212,6 +212,7 @@ export class OrgEventsService {
       allowTransfer: e.allow_transfer, transferFeeSatang: Number(e.transfer_fee_satang), transferDeadline: e.transfer_deadline,
       allowRaceChange: e.allow_race_change, raceChangeFeeSatang: Number(e.race_change_fee_satang), raceChangeDeadline: e.race_change_deadline,
       publishedAt: e.published_at, races: raceViews, shirt, readiness,
+      review: { submittedAt: e.submitted_at, reviewedAt: e.reviewed_at, note: e.review_note },
     };
   }
 
@@ -245,6 +246,12 @@ export class OrgEventsService {
     const event = await this.get(orgId, eventId);
     const missing = event.readiness.filter((r) => !r.ok).map((r) => r.key);
     if (missing.length) throw new ProblemException(409, 'EVENT_NOT_READY', 'Fill in the missing parts before opening registration', undefined, { missing });
+    // An organisation under review sends its event to the platform the first time; after approval it opens and closes on its own.
+    const review = await this.dbs.pool.query<{ review_events: boolean; reviewed_at: Date | null }>(
+      'SELECT o.review_events, e.reviewed_at FROM events e JOIN organizations o ON o.id = e.organization_id WHERE e.id = $1',
+      [eventId],
+    );
+    if (review.rows[0]?.review_events && !review.rows[0].reviewed_at) return this.setStatus(userId, orgId, eventId, ['draft'], 'pending_review');
     return this.setStatus(userId, orgId, eventId, ['draft', 'pending_review', 'closed'], 'published');
   }
 
@@ -257,6 +264,8 @@ export class OrgEventsService {
       const { rowCount } = await client.query(
         `UPDATE events SET status = $2::event_status,
                 published_at = CASE WHEN $2::event_status = 'published' THEN COALESCE(published_at, now()) ELSE published_at END,
+                submitted_at = CASE WHEN $2::event_status = 'pending_review' THEN now() ELSE submitted_at END,
+                review_note = CASE WHEN $2::event_status = 'pending_review' THEN NULL ELSE review_note END,
                 updated_at = now()
           WHERE id = $1 AND status = ANY($3::event_status[])`,
         [eventId, to, from],
