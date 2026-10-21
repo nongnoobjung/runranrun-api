@@ -118,15 +118,21 @@ export class WaitlistService {
     }
     if (w.session_status === 'active' && w.session_expires_at > new Date()) return { checkoutSessionId: w.checkout_session_id as string };
     const holding = !w.checkout_session_id;
-    const session = await this.checkout.create(userId, { eventId: w.event_id, races: [{ raceId: w.race_id, quantity: 1 }], variants: [] }, async (client, sessionId) => {
-      // Lock the entry so a double click cannot release the held place twice.
-      const locked = await client.query(
-        `UPDATE waitlist_entries SET checkout_session_id = $2 WHERE id = $1 AND status = 'offered' AND checkout_session_id IS NOT DISTINCT FROM $3 RETURNING id`,
-        [entryId, sessionId, w.checkout_session_id],
-      );
-      if (!locked.rowCount) throw new ProblemException(409, 'NO_OFFER', 'There is no place on offer for you right now');
-      if (holding) await releaseHold(client, w.race_id);
-    });
+    const session = await this.checkout.create(
+      userId,
+      { eventId: w.event_id, races: [{ raceId: w.race_id, quantity: 1 }], variants: [] },
+      {
+        beforeReserve: async (client, sessionId) => {
+          // Lock the entry so a double click cannot release the held place twice.
+          const locked = await client.query(
+            `UPDATE waitlist_entries SET checkout_session_id = $2 WHERE id = $1 AND status = 'offered' AND checkout_session_id IS NOT DISTINCT FROM $3 RETURNING id`,
+            [entryId, sessionId, w.checkout_session_id],
+          );
+          if (!locked.rowCount) throw new ProblemException(409, 'NO_OFFER', 'There is no place on offer for you right now');
+          if (holding) await releaseHold(client, w.race_id);
+        },
+      },
+    );
     return { checkoutSessionId: session.id };
   }
 

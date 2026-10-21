@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { z } from 'zod';
+import { RateLimit } from '../../common/rate-limit';
 import { parse } from '../../common/validation';
 import { EventsService } from './events.service';
 
@@ -32,28 +33,33 @@ export class EventsController {
   constructor(private readonly events: EventsService) {}
 
   @Get()
+  @RateLimit('public')
   list(@Query() query: unknown) {
     return this.events.list(parse(listQuery, query));
   }
 
   /** What the search filters can offer: provinces and months that have upcoming events. */
   @Get('filters')
+  @RateLimit('public')
   filters() {
     return this.events.filters();
   }
 
   @Get(':slug')
+  @RateLimit('public')
   get(@Param('slug') slug: string) {
     return this.events.getBySlug(parse(slugSchema, slug));
   }
 
   /** Published results of one race (the first by default), searchable by name or bib. */
   @Get(':slug/results')
+  @RateLimit('public')
   results(@Param('slug') slug: string, @Query() query: unknown) {
     return this.events.results(parse(slugSchema, slug), parse(resultsQuery, query));
   }
 
   @Get(':slug/availability')
+  @RateLimit('public')
   availability(@Param('slug') slug: string) {
     return this.events.availability(parse(slugSchema, slug));
   }

@@ -3,10 +3,12 @@ import { Queue, Worker } from 'bullmq';
 import { AppConfig, CONFIG } from '../../config';
 import { ChangesService } from '../changes/changes.service';
 import { HoldReleaseService } from '../inventory/hold-release.service';
+import { WaitingRoomService } from '../waiting-room/waiting-room.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 
 const QUEUE = 'maintenance';
 const RELEASE_HOLDS = 'release-expired-holds';
+const ADMIT_QUEUES = 'admit-waiting-rooms';
 
 /**
  * Recurring maintenance on BullMQ. Runs only when REDIS_URL is set; a job scheduler keeps exactly
@@ -23,6 +25,7 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     private readonly holds: HoldReleaseService,
     private readonly waitlist: WaitlistService,
     private readonly changes: ChangesService,
+    private readonly waitingRoom: WaitingRoomService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -30,6 +33,8 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     const connection = { url: this.config.REDIS_URL };
     this.queue = new Queue(QUEUE, { connection });
     await this.queue.upsertJobScheduler(RELEASE_HOLDS, { every: 30_000 }, { name: RELEASE_HOLDS });
+    // Cheap when no event has a queue: one SMEMBERS on an empty set.
+    await this.queue.upsertJobScheduler(ADMIT_QUEUES, { every: this.config.WAITING_ROOM_TICK_SECONDS * 1000 }, { name: ADMIT_QUEUES });
     this.worker = new Worker(
       QUEUE,
       async (job) => {
@@ -37,6 +42,7 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
         if (job.name === RELEASE_HOLDS) {
           return { released: await this.holds.releaseExpired(), offered: await this.waitlist.offerFreed(), transfersExpired: await this.changes.expireTransfers() };
         }
+        if (job.name === ADMIT_QUEUES) return { admitted: await this.waitingRoom.admitDue() };
         return null;
       },
       { connection, concurrency: 1 },

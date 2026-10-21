@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /** AES-256-GCM. Layout: 12-byte IV | 16-byte tag | ciphertext. */
 export function encryptPii(plain: string, keyBase64: string): Buffer {
@@ -26,4 +26,11 @@ export function hashIdDoc(value: string, hashKey: string): string {
 
 export function sha256Hex(value: string, key = ''): string {
   return createHmac('sha256', key).update(value).digest('hex');
+}
+
+/** Constant-time comparison of two secrets (signatures, shared keys). */
+export function safeEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
 }

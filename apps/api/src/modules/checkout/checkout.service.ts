@@ -3,6 +3,7 @@ import { PoolClient } from 'pg';
 import { DbService } from '../../db/db.service';
 import { ProblemException, problems } from '../../common/problem';
 import { InventoryService, RaceHold } from '../inventory/inventory.service';
+import { WaitingRoomService } from '../waiting-room/waiting-room.service';
 
 export const MAX_RUNNERS_PER_ORDER = 10;
 
@@ -22,13 +23,20 @@ export class CheckoutService {
   constructor(
     private readonly dbs: DbService,
     private readonly inventory: InventoryService,
+    private readonly waitingRoom: WaitingRoomService,
   ) {}
 
   /**
    * `beforeReserve` runs inside the session's transaction just before places are reserved, e.g. to hand a waitlist
-   * offer's held place over to this checkout without anyone else taking it in between.
+   * offer's held place over to this checkout without anyone else taking it in between. Such a checkout already has
+   * its place, so it skips the event's waiting room; everyone else needs the `queueToken` the queue admitted them with.
    */
-  async create(userId: string, input: CreateSessionInput, beforeReserve?: (client: PoolClient, sessionId: string) => Promise<void>) {
+  async create(
+    userId: string,
+    input: CreateSessionInput,
+    opts: { queueToken?: string; beforeReserve?: (client: PoolClient, sessionId: string) => Promise<void> } = {},
+  ) {
+    const { beforeReserve } = opts;
     const races = mergeQuantities(input.races.map((r) => [r.raceId, r.quantity]));
     const variants = mergeQuantities(input.variants.map((v) => [v.variantId, v.quantity]));
     const runners = [...races.values()].reduce((s, q) => s + q, 0);
@@ -37,7 +45,7 @@ export class CheckoutService {
     }
 
     const { rows: eventRows } = await this.dbs.pool.query(
-      `SELECT id, status, hold_minutes, registration_opens_at, registration_closes_at FROM events WHERE id = $1`,
+      `SELECT id, status, hold_minutes, registration_opens_at, registration_closes_at, use_waiting_room FROM events WHERE id = $1`,
       [input.eventId],
     );
     const event = eventRows[0];
@@ -46,6 +54,8 @@ export class CheckoutService {
     if (event.status === 'closed' || (event.registration_opens_at && now < event.registration_opens_at) || (event.registration_closes_at && now >= event.registration_closes_at)) {
       throw new ProblemException(409, 'REGISTRATION_CLOSED', 'Registration is not open for this event');
     }
+    const queueToken = event.use_waiting_room && !beforeReserve ? opts.queueToken : undefined;
+    if (event.use_waiting_room && !beforeReserve) this.waitingRoom.verifyToken(queueToken, event.id, userId);
 
     const raceInfo = await this.dbs.pool.query<{ id: string; code: string }>(
       'SELECT id, code FROM races WHERE event_id = $1 AND id = ANY($2::uuid[])',
@@ -67,10 +77,10 @@ export class CheckoutService {
 
     return this.dbs.transaction(async (_tx, client) => {
       const session = await client.query<{ id: string; expires_at: Date }>(
-        `INSERT INTO checkout_sessions (event_id, user_id, items, expires_at)
-         VALUES ($1, $2, '{}', now() + make_interval(mins => $3))
+        `INSERT INTO checkout_sessions (event_id, user_id, items, expires_at, queue_token)
+         VALUES ($1, $2, '{}', now() + make_interval(mins => $3), $4)
          RETURNING id, expires_at`,
-        [event.id, userId, event.hold_minutes],
+        [event.id, userId, event.hold_minutes, queueToken ?? null],
       );
       const { id: sessionId, expires_at: expiresAt } = session.rows[0];
       await beforeReserve?.(client, sessionId);

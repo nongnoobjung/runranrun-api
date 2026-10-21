@@ -2,6 +2,8 @@ import { Controller, DynamicModule, Get, Global, Module, Provider } from '@nestj
 import { JwtModule } from '@nestjs/jwt';
 import { AppConfig, CONFIG } from './config';
 import { AuthGuard } from './common/auth';
+import { RateLimitGuard, RateLimitService } from './common/rate-limit';
+import { RedisService } from './common/redis.service';
 import { IdempotencyService } from './common/idempotency.service';
 import { DbService } from './db/db.service';
 import { CheckoutController } from './modules/checkout/checkout.controller';
@@ -40,6 +42,8 @@ import { ProfilesService } from './modules/profiles/profiles.service';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminService } from './modules/admin/admin.service';
 import { WebhooksController } from './modules/payments/webhooks.controller';
+import { WaitingRoomController } from './modules/waiting-room/waiting-room.controller';
+import { WaitingRoomService } from './modules/waiting-room/waiting-room.service';
 
 @Controller('health')
 class HealthController {
@@ -66,6 +70,7 @@ export class AppModule {
       HealthController,
       EventsController,
       CheckoutController,
+      WaitingRoomController,
       OrdersController,
       WebhooksController,
       MeController,
@@ -82,6 +87,10 @@ export class AppModule {
         gateway,
         DbService,
         AuthGuard,
+        RedisService,
+        RateLimitService,
+        RateLimitGuard,
+        WaitingRoomService,
         IdempotencyService,
         InventoryService,
         HoldReleaseService,

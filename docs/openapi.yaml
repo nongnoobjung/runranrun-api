@@ -947,7 +947,6 @@ paths:
       summary: เข้าคิว waiting room ช่วงเปิดรับสมัคร
       security:
         - userAuth: []
-        - {}
       requestBody:
         required: true
         content:
@@ -964,19 +963,18 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/QueueTicket' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
-  /checkout/queue/{ticketId}:
+  /checkout/queue/{eventId}:
     get:
       tags: [Checkout]
       operationId: getQueueStatus
       summary: ตรวจสถานะคิว (เมื่อถึงคิวจะได้ admission_token)
       security:
         - userAuth: []
-        - {}
       parameters:
-        - name: ticketId
+        - name: eventId
           in: path
           required: true
-          schema: { type: string }
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: สถานะคิว
@@ -4230,9 +4228,11 @@ components:
     QueueTicket:
       type: object
       properties:
-        ticket_id: { type: string }
-        status: { type: string, enum: [waiting, admitted, expired] }
-        position: { type: integer }
+        event_id: { type: string, format: uuid }
+        status: { type: string, enum: [not_required, not_joined, waiting, admitted] }
+        position: { type: integer, nullable: true, description: '1 = คนถัดไป' }
+        waiting: { type: integer }
+        admit_per_minute: { type: integer }
         estimated_wait_seconds: { type: integer }
         admission_token: { type: string, description: 'ใช้ใน header X-Queue-Admission' }
         admission_expires_at: { type: string, format: date-time }
