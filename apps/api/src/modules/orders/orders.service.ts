@@ -6,6 +6,7 @@ import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { SessionItems } from '../checkout/checkout.service';
 import { checkAnswers, loadQuestions } from '../org/org-questions.service';
+import { ConsentContext, OrderConsents, recordOrderConsents } from '../privacy/privacy.service';
 import { runnerFromProfile, saveRunnerProfile } from '../profiles/profiles.service';
 import { ageOn, computeTotals, CouponRule, platformFee, PlatformFeePlan, PricedLine } from './pricing';
 
@@ -41,6 +42,8 @@ export interface CreateOrderInput {
     profileId?: string;
     saveProfile?: boolean;
   }[];
+  /** What the buyer agreed to; the web always sends it (see PrivacyService). */
+  consents?: OrderConsents;
 }
 
 const SHIRT_PRODUCT = 'shirt';
@@ -63,9 +66,9 @@ export class OrdersService {
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async create(userId: string, idempotencyKey: string, input: CreateOrderInput) {
+  async create(userId: string, idempotencyKey: string, input: CreateOrderInput, context: ConsentContext = { ip: null, userAgent: null }) {
     try {
-      return await this.dbs.transaction((_tx, client) => this.createInTx(client, userId, idempotencyKey, input));
+      return await this.dbs.transaction((_tx, client) => this.createInTx(client, userId, idempotencyKey, input, context));
     } catch (err) {
       if (err instanceof DatabaseError && err.code === '23505' && err.constraint === 'uq_registrations_person_race') {
         throw new ProblemException(409, 'ALREADY_REGISTERED', 'One of the runners is already registered for this race', 'Each ID card or passport can hold one place per race.');
@@ -74,7 +77,7 @@ export class OrdersService {
     }
   }
 
-  private async createInTx(client: PoolClient, userId: string, idempotencyKey: string, input: CreateOrderInput) {
+  private async createInTx(client: PoolClient, userId: string, idempotencyKey: string, input: CreateOrderInput, context: ConsentContext) {
     const { rows: sessionRows } = await client.query(
       `SELECT s.id, s.user_id, s.status, s.items, s.expires_at, e.id AS event_id, e.organization_id, e.event_date::text AS event_date
          FROM checkout_sessions s JOIN events e ON e.id = s.event_id
@@ -168,6 +171,7 @@ export class OrdersService {
     );
     const orderId = order.rows[0].id;
 
+    const registrationIds: string[] = [];
     for (const [i, p] of people.entries()) {
       const race = races.get(p.raceId)!;
       const price = racePrice.get(p.raceId)!;
@@ -205,6 +209,10 @@ export class OrdersService {
         ? await saveRunnerProfile(client, userId, r, Boolean(p.isSelf), { pii: this.config.PII_ENCRYPTION_KEY, hash: this.config.PII_HASH_KEY })
         : p.profileId;
       if (profileId) await client.query('UPDATE registrations SET runner_profile_id = $2 WHERE id = $1', [reg.rows[0].id, profileId]);
+      registrationIds.push(reg.rows[0].id);
+    }
+    if (input.consents) {
+      await recordOrderConsents(client, { userId, organizationId: session.organization_id, registrationIds, consents: input.consents, context });
     }
 
     for (const v of items.variants) {

@@ -1,12 +1,13 @@
-import { Body, Controller, Get, Headers, Param, Post, Res, UseGuards } from '@nestjs/common';
-import { FastifyReply } from 'fastify';
+import { Body, Controller, Get, Headers, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { IdempotencyService } from '../../common/idempotency.service';
-import { RateLimit } from '../../common/rate-limit';
+import { RateLimit, RateLimitService } from '../../common/rate-limit';
 import { parse, uuidSchema } from '../../common/validation';
 import { MAX_RUNNERS_PER_ORDER } from '../checkout/checkout.service';
 import { PaymentsService } from '../payments/payments.service';
+import { orderConsentSchema } from '../privacy/privacy.service';
 import { OrdersService } from './orders.service';
 import { phone, profileChoice, requireIdDoc, runnerOrProfileSchema } from './runner.schema';
 
@@ -31,6 +32,7 @@ const createOrderSchema = z.object({
     .min(1)
     .max(MAX_RUNNERS_PER_ORDER)
     .refine((ps) => ps.filter((p) => p.isSelf).length <= 1, 'Only one runner can be marked as yourself'),
+  consents: orderConsentSchema.optional(),
 });
 
 const createPaymentSchema = z.discriminatedUnion('method', [
@@ -46,6 +48,7 @@ export class OrdersController {
     private readonly orders: OrdersService,
     private readonly payments: PaymentsService,
     private readonly idempotency: IdempotencyService,
+    private readonly rateLimit: RateLimitService,
   ) {}
 
   @Post()
@@ -54,12 +57,14 @@ export class OrdersController {
     @CurrentUser() user: AuthUser,
     @Headers('idempotency-key') key: string | undefined,
     @Body() body: unknown,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const input = parse(createOrderSchema, body);
+    const context = { ip: this.rateLimit.clientIp(req), userAgent: req.headers['user-agent'] ?? null };
     const result = await this.idempotency.run('POST /orders', user.id, key, input, async () => ({
       status: 201,
-      body: await this.orders.create(user.id, key!, input),
+      body: await this.orders.create(user.id, key!, input, context),
     }));
     reply.status(result.status);
     return result.body;
