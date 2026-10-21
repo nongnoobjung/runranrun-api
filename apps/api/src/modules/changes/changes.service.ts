@@ -14,13 +14,14 @@ import { runnerSnapshot } from '../orders/orders.service';
 import { ageOn, computeTotals, PricedLine } from '../orders/pricing';
 import { writeAudit } from '../org/org-access.service';
 import { checkAnswers, loadQuestions } from '../org/org-questions.service';
+import { ConsentContext, orderConsentSchema, recordOrderConsents } from '../privacy/privacy.service';
 import { runnerFromProfile, saveRunnerProfile } from '../profiles/profiles.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 import { completeRaceChange, completeTransfer, releaseChangeOrder, TransferRunner } from './settle';
 
 export const transferRequestSchema = z.object({ toEmail: z.string().trim().toLowerCase().email().max(200) });
 export const acceptTransferSchema = z
-  .object({ runner: runnerOrProfileSchema, answers: z.record(z.unknown()).optional(), ...profileChoice })
+  .object({ runner: runnerOrProfileSchema, answers: z.record(z.unknown()).optional(), consents: orderConsentSchema.optional(), ...profileChoice })
   .superRefine(requireIdDoc);
 export const raceChangeSchema = z.object({ toRaceId: z.string().uuid() });
 
@@ -262,7 +263,7 @@ export class ChangesService {
    * The recipient takes the place with their own details. With no fee the place is theirs at once; otherwise
    * the details are kept on the transfer and the place moves when the fee order is paid.
    */
-  async acceptTransfer(userId: string, transferId: string, input: z.infer<typeof acceptTransferSchema>) {
+  async acceptTransfer(userId: string, transferId: string, input: z.infer<typeof acceptTransferSchema>, context: ConsentContext = { ip: null, userAgent: null }) {
     const result = await this.dbs.transaction(async (_tx, client) => {
       const { rows } = await client.query(
         `SELECT t.id, t.status, t.fee_satang, t.expires_at, t.fee_order_id, t.from_registration_id, t.to_email,
@@ -324,6 +325,9 @@ export class ChangesService {
       await client.query('UPDATE transfers SET to_user_id = $2, runner_payload = $3 WHERE id = $1', [transferId, userId, JSON.stringify(payload)]);
       if (input.saveProfile) {
         await saveRunnerProfile(client, userId, runner, false, { pii: this.config.PII_ENCRYPTION_KEY, hash: this.config.PII_HASH_KEY });
+      }
+      if (input.consents) {
+        await recordOrderConsents(client, { userId, organizationId: t.organization_id, registrationIds: [], consents: input.consents, context });
       }
 
       const fee = Number(t.fee_satang);
