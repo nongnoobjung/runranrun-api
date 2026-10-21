@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DbService } from '../../db/db.service';
+import { assignNextBib } from '../bibs/next-bib';
 import { InventoryService } from '../inventory/inventory.service';
 import { VerifiedWebhook } from './gateway';
 
@@ -129,29 +130,8 @@ export class PaymentConfirmationService {
         RETURNING id, race_id, event_id`,
       [orderId],
     );
-    for (const reg of regs.rows) await this.assignBib(client, reg.id, reg.race_id, reg.event_id);
-  }
-
-  /**
-   * Takes the race's next free number. The UPDATE on races locks the row, so concurrent
-   * confirmations for the same race get consecutive numbers; numbers already taken by hand are skipped.
-   */
-  private async assignBib(client: PoolClient, registrationId: string, raceId: string, eventId: string): Promise<void> {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const next = await client.query<{ bib: string }>(
-        `UPDATE races SET bib_next = COALESCE(bib_next, bib_start) + 1
-          WHERE id = $1 AND bib_auto_assign AND bib_start IS NOT NULL
-            AND COALESCE(bib_next, bib_start) <= COALESCE(bib_end, 2147483646)
-          RETURNING COALESCE(bib_prefix, '') || lpad((bib_next - 1)::text, 4, '0') AS bib`,
-        [raceId],
-      );
-      if (next.rowCount === 0) return; // manual numbering, or the range is used up: organiser assigns.
-      const bib = next.rows[0].bib;
-      const taken = await client.query('SELECT 1 FROM registrations WHERE event_id = $1 AND bib_number = $2', [eventId, bib]);
-      if (taken.rowCount) continue;
-      await client.query('UPDATE registrations SET bib_number = $2, bib_assigned_at = now() WHERE id = $1', [registrationId, bib]);
-      return;
-    }
+    // Races numbered by hand, or whose range is used up, are left for the organiser to number.
+    for (const reg of regs.rows) await assignNextBib(client, { id: reg.id, raceId: reg.race_id, eventId: reg.event_id }, true);
   }
 
   private async requestRefund(client: PoolClient, orderId: string, paymentId: string, reason: string): Promise<void> {
