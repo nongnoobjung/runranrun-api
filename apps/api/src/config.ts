@@ -52,6 +52,10 @@ const schema = z.object({
   WAITING_ROOM_TOKEN_MINUTES: z.coerce.number().int().min(1).max(120).default(10),
   /** How often the admission job lets the next runners in. */
   WAITING_ROOM_TICK_SECONDS: z.coerce.number().int().min(1).max(60).default(5),
+  /** Where private files (KYC documents) go. Only `local` for now; an S3/R2 driver can be added behind FileStorage. */
+  STORAGE_DRIVER: z.enum(['local']).default('local'),
+  /** Directory for the local driver, relative to the working directory unless absolute. */
+  STORAGE_LOCAL_DIR: z.string().min(1).default('storage'),
   ENABLE_DEV_ENDPOINTS: z
     .enum(['true', 'false'])
     .default('false')

@@ -5,6 +5,7 @@ import { AuthGuard } from './common/auth';
 import { RateLimitGuard, RateLimitService } from './common/rate-limit';
 import { RedisService } from './common/redis.service';
 import { IdempotencyService } from './common/idempotency.service';
+import { createStorage, FILE_STORAGE } from './common/storage';
 import { DbService } from './db/db.service';
 import { CheckoutController } from './modules/checkout/checkout.controller';
 import { CheckoutService } from './modules/checkout/checkout.service';
@@ -24,6 +25,7 @@ import { OrgBroadcastsService } from './modules/org/org-broadcasts.service';
 import { OrgCouponsService } from './modules/org/org-coupons.service';
 import { OrgEventsService } from './modules/org/org-events.service';
 import { OrgFinanceService } from './modules/org/org-finance.service';
+import { OrgKycService } from './modules/org/org-kyc.service';
 import { OrgMembersService } from './modules/org/org-members.service';
 import { OrgQuestionsService } from './modules/org/org-questions.service';
 import { OrgRegistrationsService } from './modules/org/org-registrations.service';
@@ -36,6 +38,8 @@ import { OmiseGateway } from './modules/payments/omise.gateway';
 import { PaymentConfirmationService } from './modules/payments/payment-confirmation.service';
 import { PaymentsService } from './modules/payments/payments.service';
 import { RefundsService } from './modules/refunds/refunds.service';
+import { ResultsController } from './modules/results/results.controller';
+import { ResultsService } from './modules/results/results.service';
 import { WaitlistService } from './modules/waitlist/waitlist.service';
 import { ChangesService } from './modules/changes/changes.service';
 import { ProfilesService } from './modules/profiles/profiles.service';
@@ -69,6 +73,7 @@ export class AppModule {
     const controllers = [
       HealthController,
       EventsController,
+      ResultsController,
       CheckoutController,
       WaitingRoomController,
       OrdersController,
@@ -85,6 +90,7 @@ export class AppModule {
       providers: [
         { provide: CONFIG, useValue: config },
         gateway,
+        { provide: FILE_STORAGE, useFactory: () => createStorage(config) },
         DbService,
         AuthGuard,
         RedisService,
@@ -95,6 +101,7 @@ export class AppModule {
         InventoryService,
         HoldReleaseService,
         EventsService,
+        ResultsService,
         CheckoutService,
         OrdersService,
         PaymentsService,
@@ -105,6 +112,7 @@ export class AppModule {
         OrgCouponsService,
         OrgRegistrationsService,
         OrgMembersService,
+        OrgKycService,
         OrgQuestionsService,
         { provide: EMAIL_SENDER, useClass: FakeEmailSender },
         NotificationsService,

@@ -7,6 +7,7 @@ import { DbService } from '../../db/db.service';
 import { acceptTransferSchema, ChangesService, raceChangeSchema, transferRequestSchema } from '../changes/changes.service';
 import { refundRequestSchema, RefundsService } from '../refunds/refunds.service';
 import { profileSchema, ProfilesService, profileUpdateSchema } from '../profiles/profiles.service';
+import { ResultsService } from '../results/results.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 
 const REGISTRATION_SQL = `
@@ -32,6 +33,7 @@ export class MeController {
     private readonly waitlist: WaitlistService,
     private readonly changes: ChangesService,
     private readonly profiles: ProfilesService,
+    private readonly results: ResultsService,
   ) {}
 
   @Get('registrations')
@@ -45,6 +47,12 @@ export class MeController {
     const { rows } = await this.dbs.pool.query(`${REGISTRATION_SQL} AND r.id = $2`, [user.id, parse(uuidSchema, id)]);
     if (!rows[0]) throw problems.notFound('Registration');
     return view(rows[0]);
+  }
+
+  /** Published results of the user's places, latest race first. */
+  @Get('results')
+  async myResults(@CurrentUser() user: AuthUser) {
+    return this.results.mine(user.id);
   }
 
   /** The refund the runner would get today, or why they cannot ask, plus their latest request. */

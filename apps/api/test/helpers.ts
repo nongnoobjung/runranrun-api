@@ -25,6 +25,7 @@ export function testConfig(overrides: Partial<Record<string, string>> = {}): App
     ENABLE_DEV_ENDPOINTS: 'true',
     // Tests that are about limits turn them on; everything else makes many requests from one address.
     RATE_LIMIT_ENABLED: 'false',
+    STORAGE_LOCAL_DIR: process.env.TEST_STORAGE_DIR,
     ...overrides,
   });
 }

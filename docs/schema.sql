@@ -211,17 +211,24 @@ CREATE TABLE bank_accounts (
   account_number_last4 TEXT NOT NULL,
   branch              TEXT,
   is_default          BOOLEAN NOT NULL DEFAULT false,
-  verified_at         TIMESTAMPTZ,
+  verified_at         TIMESTAMPTZ,                 -- NULL = ผู้จัดส่งมา รอแอดมินตรวจกับสมุดบัญชี
+  submitted_by        UUID REFERENCES users(id),
+  verified_by         UUID REFERENCES users(id),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX uq_bank_accounts_default ON bank_accounts(organization_id) WHERE is_default;
+CREATE UNIQUE INDEX uq_bank_accounts_unverified ON bank_accounts(organization_id) WHERE verified_at IS NULL;
 
 CREATE TABLE organizer_kyc_documents (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   doc_type        kyc_doc_type NOT NULL,
-  file_url        TEXT NOT NULL,
+  file_key        TEXT NOT NULL,                   -- key ใน storage ส่วนตัว (ไม่ใช่ URL สาธารณะ) เปิดผ่าน API ที่ตรวจสิทธิ์เท่านั้น
+  file_name       TEXT,
+  content_type    TEXT,
+  size_bytes      INTEGER,
+  uploaded_by     UUID REFERENCES users(id),
   status          kyc_status NOT NULL DEFAULT 'pending',
   reviewed_by     UUID REFERENCES users(id),
   reviewed_at     TIMESTAMPTZ,
@@ -889,6 +896,7 @@ CREATE INDEX idx_results_rank_age ON results(race_id, age_group_code, rank_age_g
 CREATE INDEX idx_results_chip_time ON results(race_id, chip_time_ms) WHERE status = 'FIN';
 CREATE INDEX idx_results_registration ON results(registration_id);
 CREATE INDEX idx_results_name_trgm ON results USING gin (display_name gin_trgm_ops);
+CREATE INDEX idx_results_bib_published ON results(bib_number) WHERE is_published;
 
 CREATE TABLE splits (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
