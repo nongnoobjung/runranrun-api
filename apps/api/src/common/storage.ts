@@ -3,8 +3,9 @@ import { dirname, resolve, sep } from 'node:path';
 import { AppConfig } from '../config';
 
 /**
- * Private file storage. Files are addressed by key (e.g. `kyc/<orgId>/<id>.pdf`) and never get a public URL:
- * callers read them back through API routes that check who is asking. STORAGE_DRIVER picks the implementation;
+ * File storage. Files are addressed by key (e.g. `kyc/<orgId>/<id>.pdf`) and never get a direct URL: callers read
+ * them back through API routes, which check who is asking for private files (KYC) and serve public ones (event
+ * images under `event-images/`) to anyone. STORAGE_DRIVER picks the implementation;
  * only the local disk exists for now, an S3/R2 driver would implement the same three calls.
  */
 export interface FileStorage {
@@ -51,7 +52,7 @@ export class LocalDiskStorage implements FileStorage {
   }
 }
 
-export function createStorage(config: AppConfig): FileStorage {
+export function createStorage(config: Pick<AppConfig, 'STORAGE_DRIVER' | 'STORAGE_LOCAL_DIR'>): FileStorage {
   switch (config.STORAGE_DRIVER) {
     case 'local':
       return new LocalDiskStorage(config.STORAGE_LOCAL_DIR);

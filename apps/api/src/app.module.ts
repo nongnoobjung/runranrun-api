@@ -11,6 +11,7 @@ import { CheckoutController } from './modules/checkout/checkout.controller';
 import { CheckoutService } from './modules/checkout/checkout.service';
 import { DevController } from './modules/dev/dev.controller';
 import { EventsController } from './modules/events/events.controller';
+import { MediaController } from './modules/events/media.controller';
 import { EventsService } from './modules/events/events.service';
 import { HoldReleaseService } from './modules/inventory/hold-release.service';
 import { InventoryService } from './modules/inventory/inventory.service';
@@ -25,6 +26,7 @@ import { OrgBroadcastsService } from './modules/org/org-broadcasts.service';
 import { OrgCouponsService } from './modules/org/org-coupons.service';
 import { OrgEventsService } from './modules/org/org-events.service';
 import { OrgFinanceService } from './modules/org/org-finance.service';
+import { OrgEventImagesService } from './modules/org/org-event-images.service';
 import { OrgKycService } from './modules/org/org-kyc.service';
 import { OrgMembersService } from './modules/org/org-members.service';
 import { OrgQuestionsService } from './modules/org/org-questions.service';
@@ -75,6 +77,7 @@ export class AppModule {
     const controllers = [
       HealthController,
       EventsController,
+      MediaController,
       ResultsController,
       CheckoutController,
       WaitingRoomController,
@@ -116,6 +119,7 @@ export class AppModule {
         OrgRegistrationsService,
         OrgMembersService,
         OrgKycService,
+        OrgEventImagesService,
         OrgQuestionsService,
         { provide: EMAIL_SENDER, useClass: FakeEmailSender },
         NotificationsService,

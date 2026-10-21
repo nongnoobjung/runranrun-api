@@ -6,8 +6,17 @@ import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { WaitingRoomService } from '../waiting-room/waiting-room.service';
 import { writeAudit } from './org-access.service';
+import { EVENT_IMAGE_URL, loadGallery } from './org-event-images.service';
 
 const isoDateTime = z.string().datetime({ offset: true });
+
+/** A question and its answer; the English side is optional and the Thai one shows when it is empty. */
+const faqSchema = z.object({
+  qTh: z.string().trim().min(1).max(300),
+  aTh: z.string().trim().min(1).max(2000),
+  qEn: z.string().trim().max(300).nullable().default(null),
+  aEn: z.string().trim().max(2000).nullable().default(null),
+});
 
 export const eventFieldsSchema = z.object({
   nameTh: z.string().trim().min(1).max(200),
@@ -19,8 +28,15 @@ export const eventFieldsSchema = z.object({
   venueName: z.string().trim().max(200).nullable(),
   venueAddress: z.string().trim().max(500).nullable(),
   summaryTh: z.string().trim().max(300).nullable(),
-  descriptionTh: z.string().trim().max(10_000).nullable(),
-  coverImageUrl: z.string().url().max(1000).nullable(),
+  summaryEn: z.string().trim().max(300).nullable(),
+  /** Markdown, stored as written; the web renders a safe subset (headings, emphasis, lists, links, images). */
+  descriptionTh: z.string().trim().max(20_000).nullable(),
+  descriptionEn: z.string().trim().max(20_000).nullable(),
+  rulesTh: z.string().trim().max(10_000).nullable(),
+  rulesEn: z.string().trim().max(10_000).nullable(),
+  faq: z.array(faqSchema).max(30),
+  /** An uploaded image's /media path, or an image hosted elsewhere. */
+  coverImageUrl: z.union([z.string().url().max(1000).regex(/^https?:\/\//i, 'http(s) only'), z.string().regex(EVENT_IMAGE_URL)]).nullable(),
   registrationOpensAt: isoDateTime.nullable(),
   registrationClosesAt: isoDateTime.nullable(),
   holdMinutes: z.number().int().min(5).max(120),
@@ -59,7 +75,12 @@ const EVENT_COLUMNS: Record<keyof EventFields, string> = {
   venueName: 'venue_name',
   venueAddress: 'venue_address',
   summaryTh: 'summary_th',
+  summaryEn: 'summary_en',
   descriptionTh: 'description_th',
+  descriptionEn: 'description_en',
+  rulesTh: 'rules_th',
+  rulesEn: 'rules_en',
+  faq: 'faq',
   coverImageUrl: 'cover_image_url',
   registrationOpensAt: 'registration_opens_at',
   registrationClosesAt: 'registration_closes_at',
@@ -130,6 +151,9 @@ const AGE_BANDS: [number, number][] = [[0, 19], [20, 29], [30, 39], [40, 49], [5
 
 const pgCode = (err: unknown) => (err as { code?: string }).code;
 
+/** node-postgres would send a JS array as a Postgres array; JSONB columns need the JSON text. */
+const columnValue = (c: keyof EventFields, v: unknown) => (c === 'faq' ? JSON.stringify(v) : v);
+
 @Injectable()
 export class OrgEventsService {
   constructor(
@@ -169,7 +193,7 @@ export class OrgEventsService {
         const { rows } = await client.query<{ id: string }>(
           `INSERT INTO events (organization_id, created_by, status, ${cols.map((c) => EVENT_COLUMNS[c]).join(', ')})
            VALUES ($1, $2, 'draft', ${cols.map((_, i) => `$${i + 3}`).join(', ')}) RETURNING id`,
-          [orgId, userId, ...cols.map((c) => fields[c])],
+          [orgId, userId, ...cols.map((c) => columnValue(c, fields[c]))],
         );
         await writeAudit(client, { actorId: userId, organizationId: orgId, eventId: rows[0].id, action: 'event.create', entityType: 'event', entityId: rows[0].id, after: fields });
         return this.get(orgId, rows[0].id, client);
@@ -203,7 +227,7 @@ export class OrgEventsService {
     const raceViews = races.rows.map((r) => ({
       id: r.id, code: r.code, nameTh: r.name_th, distanceKm: Number(r.distance_km), capacity: r.capacity, sold: r.sold,
       reserved: r.reserved, startAt: r.start_at, cutoffMinutes: r.cutoff_minutes, ageMin: r.age_min, bibPrefix: r.bib_prefix,
-      bibStart: r.bib_start, bibEnd: r.bib_end, bibNext: r.bib_next,
+      bibStart: r.bib_start, bibEnd: r.bib_end, bibNext: r.bib_next, routeMapUrl: r.route_map_url,
       tiers: (r.tiers as Record<string, unknown>[]).map((t) => ({ ...t, priceSatang: Number(t.priceSatang) })),
     }));
     const readiness: Readiness = [
@@ -216,7 +240,9 @@ export class OrgEventsService {
     return {
       id: e.id, slug: e.slug, status: e.status, nameTh: e.name_th, nameEn: e.name_en, eventType: e.event_type,
       eventDate: e.event_date_text, provinceCode: e.province_code, venueName: e.venue_name, venueAddress: e.venue_address,
-      summaryTh: e.summary_th, descriptionTh: e.description_th, coverImageUrl: e.cover_image_url,
+      summaryTh: e.summary_th, summaryEn: e.summary_en, descriptionTh: e.description_th, descriptionEn: e.description_en,
+      rulesTh: e.rules_th, rulesEn: e.rules_en, faq: e.faq, coverImageUrl: e.cover_image_url,
+      gallery: await loadGallery(client, e.id, e.gallery),
       registrationOpensAt: e.registration_opens_at, registrationClosesAt: e.registration_closes_at, holdMinutes: e.hold_minutes,
       allowRefund: e.allow_refund, refundDeadline: e.refund_deadline, refundPercentBps: e.refund_percent_bps, waitlistEnabled: e.waitlist_enabled,
       useWaitingRoom: e.use_waiting_room, queueAdmitPerMinute: e.queue_admit_per_minute,
@@ -240,7 +266,7 @@ export class OrgEventsService {
         }
         await client.query(
           `UPDATE events SET ${cols.map((c, i) => `${EVENT_COLUMNS[c]} = $${i + 2}`).join(', ')}, updated_at = now() WHERE id = $1`,
-          [eventId, ...cols.map((c) => patch[c])],
+          [eventId, ...cols.map((c) => columnValue(c, patch[c]))],
         );
         await writeAudit(client, { actorId: userId, organizationId: orgId, eventId, action: 'event.update', entityType: 'event', entityId: eventId, after: patch });
         return this.get(orgId, eventId, client);

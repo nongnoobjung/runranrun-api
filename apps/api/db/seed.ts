@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import { seedRiversideContent } from './seed-content';
+import { createStorage } from '../src/common/storage';
 import { addOrgMember, createEvent, RIVERSIDE_NIGHT_RUN, RIVERSIDE_ORGANIZER_EMAIL, setPlatformRole } from './fixtures';
 
 const ADMIN_EMAIL = 'admin@kao.example';
@@ -8,15 +10,20 @@ async function main(): Promise<void> {
   if (!url) throw new Error('DATABASE_URL is required');
   const pool = new Pool({ connectionString: url });
   try {
-    const exists = await pool.query<{ organization_id: string }>('SELECT organization_id FROM events WHERE slug = $1', [RIVERSIDE_NIGHT_RUN.slug]);
+    const exists = await pool.query<{ id: string; organization_id: string }>('SELECT id, organization_id FROM events WHERE slug = $1', [RIVERSIDE_NIGHT_RUN.slug]);
     let organizationId = exists.rows[0]?.organization_id;
+    let eventId = exists.rows[0]?.id;
     if (organizationId) {
       console.log(`${RIVERSIDE_NIGHT_RUN.slug} already seeded`);
     } else {
       const created = await createEvent(pool, RIVERSIDE_NIGHT_RUN);
       organizationId = created.organizationId;
+      eventId = created.eventId;
       console.log(`seeded ${RIVERSIDE_NIGHT_RUN.slug}`, created);
     }
+    // Images go where the API keeps files (the same STORAGE_* settings as the API's .env).
+    const storage = createStorage({ STORAGE_DRIVER: 'local', STORAGE_LOCAL_DIR: process.env.STORAGE_LOCAL_DIR || 'storage' });
+    if (await seedRiversideContent(pool, storage, eventId)) console.log('event page: Thai and English description, rules, cover and gallery');
     await addOrgMember(pool, organizationId, RIVERSIDE_ORGANIZER_EMAIL, 'owner');
     console.log(`organizer login: ${RIVERSIDE_ORGANIZER_EMAIL} (owner of the organisation)`);
     await setPlatformRole(pool, ADMIN_EMAIL, 'superadmin');

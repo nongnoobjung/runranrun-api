@@ -143,6 +143,21 @@ export async function raceCounters(pool: Pool, raceId: string) {
   return rows[0] as { capacity: number; reserved: number; sold: number };
 }
 
+/** A multipart/form-data body with a few text fields and at most one `file`, for upload routes. */
+export function multipart(fields: Record<string, string>, file?: { name: string; type: string; body: Buffer }) {
+  const boundary = `----kao${randomUUID()}`;
+  const parts: Buffer[] = Object.entries(fields).map(([k, v]) => Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`));
+  if (file) {
+    parts.push(
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name}"\r\nContent-Type: ${file.type}\r\n\r\n`),
+      file.body,
+      Buffer.from('\r\n'),
+    );
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  return { payload: Buffer.concat(parts), headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } };
+}
+
 /**
  * Redis for the waiting room and rate limit tests when global-setup found one, under a prefix of its own so runs
  * never see each other's keys; otherwise nothing, and those tests run on the in-memory stores.
