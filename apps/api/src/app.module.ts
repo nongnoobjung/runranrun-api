@@ -36,6 +36,7 @@ import { PaymentsService } from './modules/payments/payments.service';
 import { RefundsService } from './modules/refunds/refunds.service';
 import { WaitlistService } from './modules/waitlist/waitlist.service';
 import { ChangesService } from './modules/changes/changes.service';
+import { ProfilesService } from './modules/profiles/profiles.service';
 import { WebhooksController } from './modules/payments/webhooks.controller';
 
 @Controller('health')
@@ -102,6 +103,7 @@ export class AppModule {
         RefundsService,
         WaitlistService,
         ChangesService,
+        ProfilesService,
       ],
       exports: [CONFIG, DbService],
     };

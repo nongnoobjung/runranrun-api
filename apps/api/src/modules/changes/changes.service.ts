@@ -9,16 +9,19 @@ import { DbService } from '../../db/db.service';
 import { SessionItems } from '../checkout/checkout.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { runnerSchema } from '../orders/orders.controller';
+import { profileChoice, requireIdDoc, runnerOrProfileSchema } from '../orders/runner.schema';
 import { runnerSnapshot } from '../orders/orders.service';
 import { ageOn, computeTotals, PricedLine } from '../orders/pricing';
 import { writeAudit } from '../org/org-access.service';
 import { checkAnswers, loadQuestions } from '../org/org-questions.service';
+import { runnerFromProfile, saveRunnerProfile } from '../profiles/profiles.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 import { completeRaceChange, completeTransfer, releaseChangeOrder, TransferRunner } from './settle';
 
 export const transferRequestSchema = z.object({ toEmail: z.string().trim().toLowerCase().email().max(200) });
-export const acceptTransferSchema = z.object({ runner: runnerSchema, answers: z.record(z.unknown()).optional() });
+export const acceptTransferSchema = z
+  .object({ runner: runnerOrProfileSchema, answers: z.record(z.unknown()).optional(), ...profileChoice })
+  .superRefine(requireIdDoc);
 export const raceChangeSchema = z.object({ toRaceId: z.string().uuid() });
 
 /** How long a recipient has to accept, unless the event's transfer deadline comes first. */
@@ -288,7 +291,10 @@ export class ChangesService {
         throw new ProblemException(409, 'TRANSFER_UNAVAILABLE', 'This place can no longer be transferred');
       }
 
-      const runner = input.runner;
+      const runner = input.profileId
+        ? await runnerFromProfile(client, userId, input.profileId, input.runner, this.config.PII_ENCRYPTION_KEY)
+        : input.runner.idDocNumber ? { ...input.runner, idDocNumber: input.runner.idDocNumber } : null;
+      if (!runner) throw problems.validation('That saved runner is not available', [{ path: 'profileId', message: 'not found' }]);
       const age = ageOn(runner.birthDate, t.event_date);
       const errors: { path: string; message: string }[] = [];
       if (t.age_min !== null && age < t.age_min) errors.push({ path: 'runner.birthDate', message: `ต้องอายุอย่างน้อย ${t.age_min} ปีในวันแข่ง` });
@@ -316,6 +322,9 @@ export class ChangesService {
         email: runner.email ?? null, phone: runner.phone ?? null,
       };
       await client.query('UPDATE transfers SET to_user_id = $2, runner_payload = $3 WHERE id = $1', [transferId, userId, JSON.stringify(payload)]);
+      if (input.saveProfile) {
+        await saveRunnerProfile(client, userId, runner, false, { pii: this.config.PII_ENCRYPTION_KEY, hash: this.config.PII_HASH_KEY });
+      }
 
       const fee = Number(t.fee_satang);
       if (fee === 0) {

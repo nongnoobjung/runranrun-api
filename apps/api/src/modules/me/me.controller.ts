@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { problems } from '../../common/problem';
@@ -6,6 +6,7 @@ import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { acceptTransferSchema, ChangesService, raceChangeSchema, transferRequestSchema } from '../changes/changes.service';
 import { refundRequestSchema, RefundsService } from '../refunds/refunds.service';
+import { profileSchema, ProfilesService, profileUpdateSchema } from '../profiles/profiles.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 
 const REGISTRATION_SQL = `
@@ -30,6 +31,7 @@ export class MeController {
     private readonly refunds: RefundsService,
     private readonly waitlist: WaitlistService,
     private readonly changes: ChangesService,
+    private readonly profiles: ProfilesService,
   ) {}
 
   @Get('registrations')
@@ -49,6 +51,27 @@ export class MeController {
   @Get('registrations/:id/refund')
   async refundQuote(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.refunds.quote(user.id, parse(uuidSchema, id));
+  }
+
+  /** Saved runners to register again without retyping; ID numbers come back as the last four digits only. */
+  @Get('profiles')
+  async myProfiles(@CurrentUser() user: AuthUser) {
+    return this.profiles.list(user.id);
+  }
+
+  @Post('profiles')
+  async createProfile(@CurrentUser() user: AuthUser, @Body() body: unknown) {
+    return this.profiles.create(user.id, parse(profileSchema, body));
+  }
+
+  @Patch('profiles/:id')
+  async updateProfile(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.profiles.update(user.id, parse(uuidSchema, id), parse(profileUpdateSchema, body));
+  }
+
+  @Delete('profiles/:id')
+  async deleteProfile(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.profiles.remove(user.id, parse(uuidSchema, id));
   }
 
   @Get('waitlist')
