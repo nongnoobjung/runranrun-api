@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
+import { IMAGE_MAX_BYTES } from '../../common/images';
 import { ProblemException } from '../../common/problem';
 import { readUpload, sendFile } from '../../common/upload';
 import { parse, uuidSchema } from '../../common/validation';
@@ -22,6 +23,7 @@ import {
   shirtsSchema,
   tierFieldsSchema,
 } from './org-events.service';
+import { gallerySchema, imageUploadSchema, OrgEventImagesService } from './org-event-images.service';
 import { companySchema, createOrgSchema, docTypeSchema, KYC_MAX_BYTES, orgBankSchema, OrgKycService } from './org-kyc.service';
 import { inviteSchema, memberRoleSchema, OrgMembersService } from './org-members.service';
 import { createQuestionSchema, OrgQuestionsService, questionFieldsSchema, reorderSchema } from './org-questions.service';
@@ -54,6 +56,7 @@ export class OrgController {
     private readonly bibs: OrgBibsService,
     private readonly changes: ChangesService,
     private readonly kyc: OrgKycService,
+    private readonly images: OrgEventImagesService,
   ) {}
 
   /**
@@ -220,6 +223,32 @@ export class OrgController {
   async dashboard(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
     const e = await this.eventAccess(user, orgId, eventId, 'view');
     return this.events.dashboard(e.eventId);
+  }
+
+  /**
+   * multipart/form-data with `file` (JPG, PNG or WebP, at most 10 MB), `purpose` (cover, gallery, description or
+   * route_map) and `raceId` for a route map. The image is resized and becomes public at the returned `url`.
+   */
+  @Post(':orgId/events/:eventId/images')
+  async uploadEventImage(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Req() req: FastifyRequest) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    const { fields, file } = await readUpload(req, IMAGE_MAX_BYTES);
+    if (!file) throw new ProblemException(422, 'FILE_REQUIRED', 'Attach an image');
+    return this.images.upload(user.id, e.organizationId, e.eventId, parse(imageUploadSchema, fields), file.body);
+  }
+
+  @Delete(':orgId/events/:eventId/images/:imageId')
+  @HttpCode(204)
+  async deleteEventImage(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Param('imageId') imageId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    await this.images.delete(user.id, e.organizationId, e.eventId, parse(uuidSchema, imageId));
+  }
+
+  /** The gallery's order and captions, as a whole. */
+  @Put(':orgId/events/:eventId/gallery')
+  async setGallery(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.images.setGallery(user.id, e.organizationId, e.eventId, parse(gallerySchema, body).items);
   }
 
   @Post(':orgId/events/:eventId/races')

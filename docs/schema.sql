@@ -270,7 +270,7 @@ CREATE TABLE events (
   rules_en            TEXT,
   refund_policy_th    TEXT,
   refund_policy_en    TEXT,
-  faq                 JSONB NOT NULL DEFAULT '[]',
+  faq                 JSONB NOT NULL DEFAULT '[]',     -- [{ qTh, aTh, qEn, aEn }]
   schedule            JSONB NOT NULL DEFAULT '[]',     -- ตารางเวลา
   event_type          event_type NOT NULL DEFAULT 'road',
   status              event_status NOT NULL DEFAULT 'draft',
@@ -283,7 +283,7 @@ CREATE TABLE events (
   lat                 NUMERIC(9,6),
   lng                 NUMERIC(9,6),
   cover_image_url     TEXT,
-  gallery             JSONB NOT NULL DEFAULT '[]',
+  gallery             JSONB NOT NULL DEFAULT '[]',     -- [{ imageId, captionTh, captionEn }] เรียงตามที่แสดง รูปอยู่ใน event_images
   shirt_size_chart    JSONB,
   registration_opens_at  TIMESTAMPTZ,
   registration_closes_at TIMESTAMPTZ,
@@ -322,6 +322,21 @@ CREATE INDEX idx_events_type_date ON events(event_type, event_date) WHERE status
 CREATE INDEX idx_events_featured ON events(event_date) WHERE is_featured AND status = 'published';
 CREATE INDEX idx_events_name_th_trgm ON events USING gin (name_th gin_trgm_ops);
 CREATE INDEX idx_events_name_en_trgm ON events USING gin (name_en gin_trgm_ops);
+
+-- รูปบนหน้างาน (ปก แกลเลอรี รูปในคำอธิบาย แผนที่เส้นทาง) เป็นไฟล์สาธารณะ: API ย่อขนาดแล้วเก็บใน storage
+-- และเสิร์ฟที่ /v1/media/event-images/<id>.webp ให้ทุกคน (cache ยาว)
+CREATE TABLE event_images (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id     UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  storage_key  TEXT NOT NULL UNIQUE,
+  content_type TEXT NOT NULL,
+  width        INTEGER NOT NULL CHECK (width > 0),
+  height       INTEGER NOT NULL CHECK (height > 0),
+  size_bytes   INTEGER NOT NULL CHECK (size_bytes > 0),
+  uploaded_by  UUID REFERENCES users(id),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_event_images_event ON event_images(event_id);
 
 -- ระยะการแข่งขัน
 CREATE TABLE races (

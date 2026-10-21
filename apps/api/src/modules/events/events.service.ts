@@ -3,7 +3,15 @@ import { DbService } from '../../db/db.service';
 import { ProblemException, problems } from '../../common/problem';
 import { resultView } from '../org/org-results.service';
 import type { ResultsQuery } from './events.controller';
+import { loadGallery } from '../org/org-event-images.service';
 import { loadQuestions, publicQuestion } from '../org/org-questions.service';
+
+interface FaqEntry {
+  qTh: string;
+  aTh: string;
+  qEn: string | null;
+  aEn: string | null;
+}
 
 export interface EventListQuery {
   q?: string;
@@ -163,8 +171,11 @@ export class EventsService {
       id: e.id,
       slug: e.slug,
       name: { th: e.name_th, en: e.name_en },
-      summary: e.summary_th,
-      description: e.description_th,
+      // Each text comes in both languages; the page shows English where it is filled in and Thai otherwise.
+      summary: { th: e.summary_th, en: e.summary_en },
+      /** Markdown as the organiser wrote it; the web renders a safe subset. */
+      description: { th: e.description_th, en: e.description_en },
+      rules: { th: e.rules_th, en: e.rules_en },
       type: e.event_type,
       status: e.status,
       eventDate: e.event_date,
@@ -172,7 +183,10 @@ export class EventsService {
       province: e.province_code,
       venue: e.venue_name,
       coverImageUrl: e.cover_image_url,
-      faq: e.faq,
+      gallery: (await loadGallery(this.dbs.pool, e.id, e.gallery)).map((g) => ({
+        id: g.id, url: g.url, width: g.width, height: g.height, caption: { th: g.captionTh, en: g.captionEn },
+      })),
+      faq: (e.faq as FaqEntry[]).map((f) => ({ q: { th: f.qTh, en: f.qEn }, a: { th: f.aTh, en: f.aEn } })),
       shirtSizeChart: e.shirt_size_chart,
       registration: { opensAt: e.registration_opens_at, closesAt: e.registration_closes_at, holdMinutes: e.hold_minutes },
       resultsPublishedAt: e.results_published_at,
@@ -247,7 +261,7 @@ export class EventsService {
 
   private async racesWithAvailability(eventId: string, opensAt: Date | null, closesAt: Date | null) {
     const { rows } = await this.dbs.pool.query(
-      `SELECT r.id, r.code, r.name_th, r.distance_km, r.start_at, r.cutoff_minutes, r.age_min, r.age_max,
+      `SELECT r.id, r.code, r.name_th, r.distance_km, r.route_map_url, r.start_at, r.cutoff_minutes, r.age_min, r.age_max,
               r.gender_restriction, a.capacity, a.available, a.current_price_satang,
               (SELECT pt.name FROM price_tiers pt
                 WHERE pt.race_id = r.id AND now() >= pt.starts_at AND now() < pt.ends_at
@@ -272,6 +286,7 @@ export class EventsService {
       available: r.available,
       priceSatang: r.current_price_satang === null ? null : Number(r.current_price_satang),
       tierName: r.tier_name,
+      routeMapUrl: r.route_map_url,
       availability: raceAvailability(r.available, r.capacity, opensAt, closesAt),
     }));
   }

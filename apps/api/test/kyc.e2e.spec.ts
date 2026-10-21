@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { addOrgMember, setPlatformRole } from '../db/fixtures';
-import { bootApp, call, login, TestContext } from './helpers';
+import { bootApp, call, login, multipart, TestContext } from './helpers';
 
 /** Smallest bytes each driver of the type check recognises. */
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n');
@@ -15,20 +15,6 @@ const company = {
   contactPhone: '081-234-5678',
   address: { line1: '99 ถนนเจริญกรุง', subdistrict: 'บางรัก', district: 'บางรัก', province: 'กรุงเทพมหานคร', postcode: '10500' },
 };
-
-function multipart(fields: Record<string, string>, file?: { name: string; type: string; body: Buffer }) {
-  const boundary = `----kao${randomUUID()}`;
-  const parts: Buffer[] = Object.entries(fields).map(([k, v]) => Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`));
-  if (file) {
-    parts.push(
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name}"\r\nContent-Type: ${file.type}\r\n\r\n`),
-      file.body,
-      Buffer.from('\r\n'),
-    );
-  }
-  parts.push(Buffer.from(`--${boundary}--\r\n`));
-  return { payload: Buffer.concat(parts), headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } };
-}
 
 describe('organiser sign-up and KYC', () => {
   let ctx: TestContext;

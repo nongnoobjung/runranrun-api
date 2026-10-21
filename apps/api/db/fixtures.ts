@@ -60,7 +60,7 @@ export async function createEvent(pool: Pool, f: EventFixture, orgSlug = 'rivers
         organizationId, f.slug, f.nameTh, f.nameEn ?? null, 'วิ่งเลียบเจ้าพระยาตอนกลางคืน ปิดถนนตลอดสาย',
         f.eventDate, f.provinceCode ?? 'BKK', f.venueName ?? 'ลานริมน้ำ บางคอแหลม',
         f.opensAt ?? new Date(now - DAY), f.closesAt ?? new Date(now + 90 * DAY), f.holdMinutes ?? 15,
-        JSON.stringify([{ q: 'สมัครให้เพื่อนได้ไหม', a: 'ได้ สูงสุด 10 คนต่อคำสั่งซื้อ' }]),
+        JSON.stringify([{ qTh: 'สมัครให้เพื่อนได้ไหม', aTh: 'ได้ สูงสุด 10 คนต่อคำสั่งซื้อ', qEn: 'Can I register my friends?', aEn: 'Yes, up to 10 runners per order.' }]),
         JSON.stringify((f.shirtSizes ?? []).map((s) => ({ size: s.label, chestIn: s.chestIn }))),
       ],
     );

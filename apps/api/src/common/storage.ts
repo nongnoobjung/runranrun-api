@@ -51,7 +51,7 @@ export class LocalDiskStorage implements FileStorage {
   }
 }
 
-export function createStorage(config: AppConfig): FileStorage {
+export function createStorage(config: Pick<AppConfig, 'STORAGE_DRIVER' | 'STORAGE_LOCAL_DIR'>): FileStorage {
   switch (config.STORAGE_DRIVER) {
     case 'local':
       return new LocalDiskStorage(config.STORAGE_LOCAL_DIR);
