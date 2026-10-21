@@ -37,6 +37,8 @@ import { RefundsService } from './modules/refunds/refunds.service';
 import { WaitlistService } from './modules/waitlist/waitlist.service';
 import { ChangesService } from './modules/changes/changes.service';
 import { ProfilesService } from './modules/profiles/profiles.service';
+import { AdminController } from './modules/admin/admin.controller';
+import { AdminService } from './modules/admin/admin.service';
 import { WebhooksController } from './modules/payments/webhooks.controller';
 
 @Controller('health')
@@ -68,6 +70,7 @@ export class AppModule {
       WebhooksController,
       MeController,
       OrgController,
+      AdminController,
       ...(config.ENABLE_DEV_ENDPOINTS ? [DevController] : []),
     ];
     return {
@@ -104,6 +107,7 @@ export class AppModule {
         WaitlistService,
         ChangesService,
         ProfilesService,
+        AdminService,
       ],
       exports: [CONFIG, DbService],
     };
