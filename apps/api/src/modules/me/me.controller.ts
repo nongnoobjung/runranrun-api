@@ -1,7 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { problems } from '../../common/problem';
+import { RateLimitService } from '../../common/rate-limit';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { acceptTransferSchema, ChangesService, raceChangeSchema, transferRequestSchema } from '../changes/changes.service';
@@ -34,6 +36,7 @@ export class MeController {
     private readonly changes: ChangesService,
     private readonly profiles: ProfilesService,
     private readonly results: ResultsService,
+    private readonly rateLimit: RateLimitService,
   ) {}
 
   @Get('registrations')
@@ -140,8 +143,9 @@ export class MeController {
 
   /** The recipient takes the place with their own runner details (and pays the fee, if any). */
   @Post('transfers/:id/accept')
-  async acceptTransfer(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
-    return this.changes.acceptTransfer(user.id, parse(uuidSchema, id), parse(acceptTransferSchema, body));
+  async acceptTransfer(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown, @Req() req: FastifyRequest) {
+    const context = { ip: this.rateLimit.clientIp(req), userAgent: req.headers['user-agent'] ?? null };
+    return this.changes.acceptTransfer(user.id, parse(uuidSchema, id), parse(acceptTransferSchema, body), context);
   }
 
   @Post('transfers/:id/decline')

@@ -47,6 +47,8 @@ import { ChangesService } from './modules/changes/changes.service';
 import { ProfilesService } from './modules/profiles/profiles.service';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminService } from './modules/admin/admin.service';
+import { PrivacyController } from './modules/privacy/privacy.controller';
+import { PrivacyService } from './modules/privacy/privacy.service';
 import { WebhooksController } from './modules/payments/webhooks.controller';
 import { WaitingRoomController } from './modules/waiting-room/waiting-room.controller';
 import { WaitingRoomService } from './modules/waiting-room/waiting-room.service';
@@ -84,6 +86,7 @@ export class AppModule {
       MeController,
       OrgController,
       AdminController,
+      PrivacyController,
       ...(config.ENABLE_DEV_ENDPOINTS ? [DevController] : []),
     ];
     return {
@@ -129,6 +132,7 @@ export class AppModule {
         ChangesService,
         ProfilesService,
         AdminService,
+        PrivacyService,
       ],
       exports: [CONFIG, DbService],
     };
