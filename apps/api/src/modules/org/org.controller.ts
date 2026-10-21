@@ -3,6 +3,7 @@ import { FastifyReply } from 'fastify';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
+import { cancelSchema, refundListSchema, RefundsService, rejectSchema, transferredSchema } from '../refunds/refunds.service';
 import { OrgAccessService } from './org-access.service';
 import { OrgFinanceService, transactionsQuerySchema } from './org-finance.service';
 import { assignSchema, importSchema, OrgBibsService, setBibSchema } from './org-bibs.service';
@@ -37,6 +38,7 @@ export class OrgController {
     private readonly coupons: OrgCouponsService,
     private readonly registrations: OrgRegistrationsService,
     private readonly members: OrgMembersService,
+    private readonly refunds: RefundsService,
     private readonly finance: OrgFinanceService,
     private readonly questions: OrgQuestionsService,
     private readonly bibs: OrgBibsService,
@@ -317,6 +319,54 @@ export class OrgController {
   ) {
     const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
     return this.bibs.set(user.id, e.organizationId, e.eventId, parse(uuidSchema, registrationId), parse(setBibSchema, body).bibNumber);
+  }
+
+  @Get(':orgId/events/:eventId/refunds')
+  async listRefunds(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Query() query: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_refunds');
+    return this.refunds.list(e.eventId, parse(refundListSchema, query).status);
+  }
+
+  @Post(':orgId/events/:eventId/refunds/:refundId/approve')
+  async approveRefund(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Param('refundId') refundId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_refunds');
+    return this.refunds.approve(user.id, e.organizationId, e.eventId, parse(uuidSchema, refundId));
+  }
+
+  @Post(':orgId/events/:eventId/refunds/:refundId/reject')
+  async rejectRefund(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Param('refundId') refundId: string,
+    @Body() body: unknown,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_refunds');
+    return this.refunds.reject(user.id, e.organizationId, e.eventId, parse(uuidSchema, refundId), parse(rejectSchema, body).note);
+  }
+
+  @Post(':orgId/events/:eventId/refunds/:refundId/transferred')
+  async refundTransferred(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Param('refundId') refundId: string,
+    @Body() body: unknown,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_refunds');
+    return this.refunds.markTransferred(user.id, e.organizationId, e.eventId, parse(uuidSchema, refundId), parse(transferredSchema, body).reference);
+  }
+
+  @Post(':orgId/events/:eventId/registrations/:registrationId/cancel')
+  async cancelRegistration(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Param('registrationId') registrationId: string,
+    @Body() body: unknown,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_refunds');
+    return this.refunds.cancelRegistration(user.id, e.organizationId, e.eventId, parse(uuidSchema, registrationId), parse(cancelSchema, body));
   }
 
   @Get(':orgId/events/:eventId/registrations')

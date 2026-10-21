@@ -1,8 +1,9 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { problems } from '../../common/problem';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
+import { refundRequestSchema, RefundsService } from '../refunds/refunds.service';
 
 const REGISTRATION_SQL = `
   SELECT r.id, r.registration_no, r.status, r.bib_number, r.qr_token, r.shirt_size, r.first_name_en, r.last_name_en,
@@ -21,7 +22,10 @@ const REGISTRATION_SQL = `
 @Controller('me')
 @UseGuards(AuthGuard)
 export class MeController {
-  constructor(private readonly dbs: DbService) {}
+  constructor(
+    private readonly dbs: DbService,
+    private readonly refunds: RefundsService,
+  ) {}
 
   @Get('registrations')
   async registrations(@CurrentUser() user: AuthUser) {
@@ -34,6 +38,17 @@ export class MeController {
     const { rows } = await this.dbs.pool.query(`${REGISTRATION_SQL} AND r.id = $2`, [user.id, parse(uuidSchema, id)]);
     if (!rows[0]) throw problems.notFound('Registration');
     return view(rows[0]);
+  }
+
+  /** The refund the runner would get today, or why they cannot ask, plus their latest request. */
+  @Get('registrations/:id/refund')
+  async refundQuote(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.refunds.quote(user.id, parse(uuidSchema, id));
+  }
+
+  @Post('registrations/:id/refund-requests')
+  async requestRefund(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.refunds.request(user.id, parse(uuidSchema, id), parse(refundRequestSchema, body));
   }
 }
 

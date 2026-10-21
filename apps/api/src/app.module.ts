@@ -29,6 +29,7 @@ import { PAYMENT_GATEWAY, PaymentGateway } from './modules/payments/gateway';
 import { OmiseGateway } from './modules/payments/omise.gateway';
 import { PaymentConfirmationService } from './modules/payments/payment-confirmation.service';
 import { PaymentsService } from './modules/payments/payments.service';
+import { RefundsService } from './modules/refunds/refunds.service';
 import { WebhooksController } from './modules/payments/webhooks.controller';
 
 @Controller('health')
@@ -88,6 +89,7 @@ export class AppModule {
         OrgQuestionsService,
         OrgFinanceService,
         OrgBibsService,
+        RefundsService,
       ],
       exports: [CONFIG, DbService],
     };
