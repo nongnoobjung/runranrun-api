@@ -49,6 +49,19 @@ export class DevController {
     return { result: await this.confirmation.apply(this.gateway.name, event) };
   }
 
+  /** Same as above, addressed by order: completes the order's latest pending charge. Used by the web app's dev tools. */
+  @Post('orders/:orderId/complete-payment')
+  async completeOrderPayment(@Param('orderId') orderId: string, @Body() body: unknown) {
+    const { rows } = await this.dbs.pool.query<{ gateway_charge_id: string | null }>(
+      `SELECT gateway_charge_id FROM payments WHERE order_id = $1 AND status = 'pending'
+        ORDER BY created_at DESC LIMIT 1`,
+      [parse(z.string().uuid(), orderId)],
+    );
+    const chargeId = rows[0]?.gateway_charge_id;
+    if (!chargeId) throw new ProblemException(404, 'NO_PENDING_PAYMENT', 'This order has no pending payment');
+    return this.completeCharge(chargeId, body);
+  }
+
   @Post('jobs/release-expired-holds')
   async releaseHolds() {
     return { released: await this.holds.releaseExpired() };

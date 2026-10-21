@@ -101,6 +101,19 @@ describe('expired checkouts and late payments', () => {
     expect(await raceCounters(ctx.pool, ev.raceIds['5K'])).toMatchObject({ capacity: 1, reserved: 0, sold: 1 });
   });
 
+  it('dev helper completes the pending payment of an order', async () => {
+    const ev = await seedEvent(ctx.pool, {
+      ...noShirts,
+      races: [{ code: '5K', nameTh: 'ฟันรัน', distanceKm: 5, capacity: 3, tiers: [{ name: 'ราคาเดียว', priceSatang: 65_000 }] }],
+    });
+    const o = await orderWithQr(ev, '5K');
+    const res = await call(ctx.app, 'POST', `/v1/dev/orders/${o.orderId}/complete-payment`, { body: {} });
+    expect(res.status).toBe(201);
+    expect(res.body.result).toBe('confirmed');
+    const again = await call(ctx.app, 'POST', `/v1/dev/orders/${o.orderId}/complete-payment`, { body: {} });
+    expect(again.status).toBe(404);
+  });
+
   it('cancelling a checkout before paying gives the places back', async () => {
     const ev = await seedEvent(ctx.pool, {
       ...noShirts,
