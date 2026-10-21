@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseError, PoolClient } from 'pg';
 import { z } from 'zod';
+import { parseCsv } from '../../common/csv';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { assignNextBib } from '../bibs/next-bib';
@@ -222,43 +223,4 @@ export function parseBibCsv(text: string): { rows: ImportRow[] } | { error: stri
   if (rows.length === 0) return { error: 'The CSV has no rows with a bib number' };
   if (rows.length > 20_000) return { error: 'Import at most 20,000 rows at a time' };
   return { rows };
-}
-
-/** RFC 4180 CSV: commas, double-quoted fields with "" escapes, CRLF or LF line ends. */
-function parseCsv(text: string): string[][] {
-  const out: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else if (ch === '"') {
-        quoted = false;
-      } else {
-        field += ch;
-      }
-    } else if (ch === '"') {
-      quoted = true;
-    } else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && text[i + 1] === '\n') i++;
-      row.push(field);
-      out.push(row);
-      row = [];
-      field = '';
-    } else {
-      field += ch;
-    }
-  }
-  if (field !== '' || row.length) {
-    row.push(field);
-    out.push(row);
-  }
-  return out;
 }

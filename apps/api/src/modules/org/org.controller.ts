@@ -5,6 +5,7 @@ import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { cancelSchema, refundListSchema, RefundsService, rejectSchema, transferredSchema } from '../refunds/refunds.service';
 import { OrgAccessService } from './org-access.service';
+import { OrgResultsService, publishSchema, resultsImportSchema } from './org-results.service';
 import { assignSchema, importSchema, OrgBibsService, setBibSchema } from './org-bibs.service';
 import { couponFieldsSchema, createCouponSchema, OrgCouponsService } from './org-coupons.service';
 import {
@@ -37,6 +38,7 @@ export class OrgController {
     private readonly coupons: OrgCouponsService,
     private readonly registrations: OrgRegistrationsService,
     private readonly members: OrgMembersService,
+    private readonly results: OrgResultsService,
     private readonly refunds: RefundsService,
     private readonly questions: OrgQuestionsService,
     private readonly bibs: OrgBibsService,
@@ -332,6 +334,27 @@ export class OrgController {
   ) {
     const e = await this.eventAccess(user, orgId, eventId, 'manage_refunds');
     return this.refunds.cancelRegistration(user.id, e.organizationId, e.eventId, parse(uuidSchema, registrationId), parse(cancelSchema, body));
+  }
+
+  @Get(':orgId/events/:eventId/results')
+  async resultsSummary(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'view');
+    return this.results.summary(e.eventId);
+  }
+
+  @Post(':orgId/events/:eventId/results/import')
+  @HttpCode(200)
+  async importResults(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    const input = parse(resultsImportSchema, body);
+    return this.results.import(user.id, e.organizationId, e.eventId, input.csv, input.dryRun);
+  }
+
+  @Post(':orgId/events/:eventId/results/publish')
+  @HttpCode(200)
+  async publishResults(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.results.publish(user.id, e.organizationId, e.eventId, parse(publishSchema, body).published);
   }
 
   @Get(':orgId/events/:eventId/registrations')

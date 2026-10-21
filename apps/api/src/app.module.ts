@@ -21,6 +21,7 @@ import { OrgEventsService } from './modules/org/org-events.service';
 import { OrgMembersService } from './modules/org/org-members.service';
 import { OrgQuestionsService } from './modules/org/org-questions.service';
 import { OrgRegistrationsService } from './modules/org/org-registrations.service';
+import { OrgResultsService } from './modules/org/org-results.service';
 import { OrdersController } from './modules/orders/orders.controller';
 import { OrdersService } from './modules/orders/orders.service';
 import { FakeGateway } from './modules/payments/fake.gateway';
@@ -86,6 +87,7 @@ export class AppModule {
         OrgRegistrationsService,
         OrgMembersService,
         OrgQuestionsService,
+        OrgResultsService,
         OrgBibsService,
         RefundsService,
       ],

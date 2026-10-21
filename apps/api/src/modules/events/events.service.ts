@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '../../db/db.service';
-import { problems } from '../../common/problem';
+import { ProblemException, problems } from '../../common/problem';
+import { resultView } from '../org/org-results.service';
+import type { ResultsQuery } from './events.controller';
 import { loadQuestions, publicQuestion } from '../org/org-questions.service';
 
 export interface EventListQuery {
@@ -134,6 +136,7 @@ export class EventsService {
       faq: e.faq,
       shirtSizeChart: e.shirt_size_chart,
       registration: { opensAt: e.registration_opens_at, closesAt: e.registration_closes_at, holdMinutes: e.hold_minutes },
+      resultsPublishedAt: e.results_published_at,
       policy: { allowTransfer: e.allow_transfer, allowRaceChange: e.allow_race_change, allowRefund: e.allow_refund, waitlist: e.waitlist_enabled },
       organizer: { slug: e.org_slug, name: e.org_name, logoUrl: e.org_logo },
       races,
@@ -149,6 +152,47 @@ export class EventsService {
       })),
       /** The organiser's extra questions; each runner answers the ones for their race. */
       questions: questions.map(publicQuestion),
+    };
+  }
+
+  async results(slug: string, query: ResultsQuery) {
+    const { rows } = await this.dbs.pool.query(
+      `SELECT id, slug, name_th, event_date::text AS event_date, results_published_at FROM events WHERE slug = $1 AND status IN ('published', 'closed')`,
+      [slug],
+    );
+    const e = rows[0];
+    if (!e) throw problems.notFound('Event');
+    if (!e.results_published_at) throw new ProblemException(404, 'RESULTS_NOT_PUBLISHED', 'Results for this event are not out yet');
+    const races = await this.dbs.pool.query(
+      `SELECT ra.id, ra.code, ra.name_th, ra.distance_km,
+              count(r.id) FILTER (WHERE r.status = 'FIN')::int AS finishers, count(r.id)::int AS total
+         FROM races ra JOIN results r ON r.race_id = ra.id AND r.is_published
+        WHERE ra.event_id = $1 GROUP BY ra.id ORDER BY ra.sort_order, ra.distance_km DESC`,
+      [e.id],
+    );
+    const raceId = query.race ?? races.rows[0]?.id ?? null;
+    const params: unknown[] = [raceId];
+    const where = ['r.race_id = $1', 'r.is_published'];
+    if (query.q) {
+      params.push(`%${query.q.replace(/[%_\\]/g, '\\$&')}%`, query.q.toUpperCase());
+      where.push(`(r.display_name ILIKE $${params.length - 1} OR r.bib_number = $${params.length})`);
+    }
+    if (query.gender) {
+      params.push(query.gender);
+      where.push(`r.gender = $${params.length}`);
+    }
+    const list = await this.dbs.pool.query(
+      `SELECT r.*, count(*) OVER ()::int AS total_rows FROM results r WHERE ${where.join(' AND ')}
+        ORDER BY (r.status = 'FIN') DESC, r.rank_overall NULLS LAST, r.bib_number
+        LIMIT ${query.limit} OFFSET ${query.offset}`,
+      params,
+    );
+    return {
+      event: { slug: e.slug, name: e.name_th, eventDate: e.event_date, publishedAt: e.results_published_at },
+      races: races.rows.map((r) => ({ id: r.id, code: r.code, name: r.name_th, distanceKm: Number(r.distance_km), finishers: r.finishers, total: r.total })),
+      raceId,
+      items: list.rows.map(resultView),
+      total: list.rows[0]?.total_rows ?? 0,
     };
   }
 
