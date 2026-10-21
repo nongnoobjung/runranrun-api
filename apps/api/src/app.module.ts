@@ -15,6 +15,7 @@ import { JobsService } from './modules/jobs/jobs.service';
 import { MeController } from './modules/me/me.controller';
 import { OrgAccessService } from './modules/org/org-access.service';
 import { OrgController } from './modules/org/org.controller';
+import { OrgBibsService } from './modules/org/org-bibs.service';
 import { OrgCouponsService } from './modules/org/org-coupons.service';
 import { OrgEventsService } from './modules/org/org-events.service';
 import { OrgMembersService } from './modules/org/org-members.service';
@@ -85,6 +86,7 @@ export class AppModule {
         OrgRegistrationsService,
         OrgMembersService,
         OrgQuestionsService,
+        OrgBibsService,
         RefundsService,
       ],
       exports: [CONFIG, DbService],

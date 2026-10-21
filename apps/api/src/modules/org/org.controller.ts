@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { cancelSchema, refundListSchema, RefundsService, rejectSchema, transferredSchema } from '../refunds/refunds.service';
 import { OrgAccessService } from './org-access.service';
+import { assignSchema, importSchema, OrgBibsService, setBibSchema } from './org-bibs.service';
 import { couponFieldsSchema, createCouponSchema, OrgCouponsService } from './org-coupons.service';
 import {
   createEventSchema,
@@ -38,6 +39,7 @@ export class OrgController {
     private readonly members: OrgMembersService,
     private readonly refunds: RefundsService,
     private readonly questions: OrgQuestionsService,
+    private readonly bibs: OrgBibsService,
   ) {}
 
   /**
@@ -250,6 +252,38 @@ export class OrgController {
   async deleteQuestion(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Param('questionId') questionId: string) {
     const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
     return this.questions.remove(user.id, e.organizationId, e.eventId, parse(uuidSchema, questionId));
+  }
+
+  @Get(':orgId/events/:eventId/bibs')
+  async bibOverview(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'view');
+    return this.bibs.overview(e.eventId);
+  }
+
+  @Post(':orgId/events/:eventId/bibs/assign')
+  async assignBibs(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.bibs.assignWaiting(user.id, e.organizationId, e.eventId, parse(assignSchema, body ?? {}).raceId);
+  }
+
+  @Post(':orgId/events/:eventId/bibs/import')
+  @HttpCode(200)
+  async importBibs(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    const input = parse(importSchema, body);
+    return this.bibs.import(user.id, e.organizationId, e.eventId, input.csv, input.dryRun);
+  }
+
+  @Put(':orgId/events/:eventId/registrations/:registrationId/bib')
+  async setBib(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Param('registrationId') registrationId: string,
+    @Body() body: unknown,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.bibs.set(user.id, e.organizationId, e.eventId, parse(uuidSchema, registrationId), parse(setBibSchema, body).bibNumber);
   }
 
   @Get(':orgId/events/:eventId/refunds')
