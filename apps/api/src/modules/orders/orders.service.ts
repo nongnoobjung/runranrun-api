@@ -6,6 +6,7 @@ import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { SessionItems } from '../checkout/checkout.service';
 import { checkAnswers, loadQuestions } from '../org/org-questions.service';
+import { runnerFromProfile, saveRunnerProfile } from '../profiles/profiles.service';
 import { ageOn, computeTotals, CouponRule, platformFee, PlatformFeePlan, PricedLine } from './pricing';
 
 export interface RunnerInput {
@@ -34,8 +35,11 @@ export interface CreateOrderInput {
     raceId: string;
     shirtVariantId?: string;
     isSelf?: boolean;
-    runner: RunnerInput;
+    /** The ID number may be left out when it comes from one of the user's saved profiles. */
+    runner: Omit<RunnerInput, 'idDocNumber'> & { idDocNumber?: string };
     answers?: Record<string, unknown>;
+    profileId?: string;
+    saveProfile?: boolean;
   }[];
 }
 
@@ -95,7 +99,15 @@ export class OrdersService {
     const races = await this.loadRaces(client, items.races.map((r) => r.raceId));
     const shirtVariantIds = await this.shirtVariantIds(client, session.event_id);
 
-    const people = input.participants.map((p, index) => {
+    const participants = [];
+    for (const [index, p] of input.participants.entries()) {
+      const runner = p.profileId
+        ? await runnerFromProfile(client, userId, p.profileId, p.runner, this.config.PII_ENCRYPTION_KEY)
+        : p.runner.idDocNumber ? { ...p.runner, idDocNumber: p.runner.idDocNumber } : null;
+      if (!runner) throw problems.validation('That saved runner is not available', [{ path: `participants.${index}.profileId`, message: 'not found' }]);
+      participants.push({ ...p, runner });
+    }
+    const people = participants.map((p, index) => {
       const race = races.get(p.raceId)!;
       const age = ageOn(p.runner.birthDate, session.event_date);
       if (race.age_min !== null && age < race.age_min) {
@@ -189,6 +201,10 @@ export class OrdersService {
         ],
       );
       await client.query('UPDATE order_items SET registration_id = $2 WHERE id = $1', [item.rows[0].id, reg.rows[0].id]);
+      const profileId = p.saveProfile
+        ? await saveRunnerProfile(client, userId, r, Boolean(p.isSelf), { pii: this.config.PII_ENCRYPTION_KEY, hash: this.config.PII_HASH_KEY })
+        : p.profileId;
+      if (profileId) await client.query('UPDATE registrations SET runner_profile_id = $2 WHERE id = $1', [reg.rows[0].id, profileId]);
     }
 
     for (const v of items.variants) {

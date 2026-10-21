@@ -155,6 +155,7 @@ CREATE TABLE runner_profiles (
 CREATE INDEX idx_runner_profiles_owner ON runner_profiles(owner_user_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_runner_profiles_doc_hash ON runner_profiles(id_doc_hash);
 CREATE UNIQUE INDEX uq_runner_profiles_self ON runner_profiles(owner_user_id) WHERE is_self AND deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_runner_profiles_owner_doc ON runner_profiles(owner_user_id, id_doc_hash) WHERE deleted_at IS NULL;
 
 -- =====================================================================
 -- ORGANIZATIONS

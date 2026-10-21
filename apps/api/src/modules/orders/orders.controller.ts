@@ -7,26 +7,7 @@ import { parse, uuidSchema } from '../../common/validation';
 import { MAX_RUNNERS_PER_ORDER } from '../checkout/checkout.service';
 import { PaymentsService } from '../payments/payments.service';
 import { OrdersService } from './orders.service';
-
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'use YYYY-MM-DD');
-const phone = z.string().regex(/^\+?[0-9-]{9,15}$/, 'invalid phone number');
-
-export const runnerSchema = z.object({
-  firstNameTh: z.string().trim().min(1).max(80).optional(),
-  lastNameTh: z.string().trim().min(1).max(80).optional(),
-  firstNameEn: z.string().trim().min(1).max(60).regex(/^[A-Za-z .'-]+$/, 'English letters only'),
-  lastNameEn: z.string().trim().min(1).max(60).regex(/^[A-Za-z .'-]+$/, 'English letters only'),
-  gender: z.enum(['male', 'female', 'other']),
-  birthDate: isoDate,
-  nationality: z.string().length(2),
-  idDocType: z.enum(['thai_id', 'passport']),
-  idDocNumber: z.string().trim().min(5).max(30),
-  email: z.string().email().optional(),
-  phone: phone.optional(),
-  bloodType: z.enum(['A', 'B', 'AB', 'O', 'unknown']).optional(),
-  emergencyName: z.string().trim().min(1).max(100),
-  emergencyPhone: phone,
-});
+import { phone, profileChoice, requireIdDoc, runnerOrProfileSchema } from './runner.schema';
 
 const createOrderSchema = z.object({
   checkoutSessionId: z.string().uuid(),
@@ -35,13 +16,16 @@ const createOrderSchema = z.object({
   billing: z.record(z.unknown()).optional(),
   participants: z
     .array(
-      z.object({
-        raceId: z.string().uuid(),
-        shirtVariantId: z.string().uuid().optional(),
-        isSelf: z.boolean().optional(),
-        runner: runnerSchema,
-        answers: z.record(z.unknown()).optional(),
-      }),
+      z
+        .object({
+          raceId: z.string().uuid(),
+          shirtVariantId: z.string().uuid().optional(),
+          isSelf: z.boolean().optional(),
+          runner: runnerOrProfileSchema,
+          answers: z.record(z.unknown()).optional(),
+          ...profileChoice,
+        })
+        .superRefine(requireIdDoc),
     )
     .min(1)
     .max(MAX_RUNNERS_PER_ORDER)
