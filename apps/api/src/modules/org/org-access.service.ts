@@ -8,7 +8,7 @@ export type OrgRole = 'owner' | 'admin' | 'finance' | 'staff' | 'viewer';
 /**
  * What each organizer role may do. Everyone in the team can look at the dashboard and the runner list;
  * runner ID numbers and exports carry personal data, so only owners and admins get them.
- * Only owners change who is in the team; refunds are for owners, admins and finance.
+ * Only owners change who is in the team; refunds and money are for owners, admins and finance.
  */
 const PERMISSIONS = {
   view: ['owner', 'admin', 'finance', 'staff', 'viewer'],
@@ -17,6 +17,7 @@ const PERMISSIONS = {
   checkin: ['owner', 'admin', 'staff'],
   manage_team: ['owner'],
   manage_refunds: ['owner', 'admin', 'finance'],
+  view_finance: ['owner', 'admin', 'finance'],
 } as const satisfies Record<string, readonly OrgRole[]>;
 
 export type OrgPermission = keyof typeof PERMISSIONS;

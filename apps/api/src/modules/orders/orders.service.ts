@@ -6,7 +6,7 @@ import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { SessionItems } from '../checkout/checkout.service';
 import { checkAnswers, loadQuestions } from '../org/org-questions.service';
-import { ageOn, computeTotals, CouponRule, PricedLine } from './pricing';
+import { ageOn, computeTotals, CouponRule, platformFee, PlatformFeePlan, PricedLine } from './pricing';
 
 export interface RunnerInput {
   firstNameTh?: string;
@@ -126,19 +126,21 @@ export class OrdersService {
       lines.push({ key: `variant:${v.variantId}`, unitPriceSatang: v.unitPriceSatang, quantity: v.quantity });
     }
     const totals = computeTotals(lines, coupon?.rule ?? null, this.config.RUNNER_FEE_BPS);
+    const plan = await this.platformFeePlan(client, session.organization_id);
+    const platformFeeSatang = platformFee(totals.subtotalSatang - totals.discountSatang, people.length, plan);
 
     const seq = await client.query<{ n: string }>(`SELECT nextval('order_no_seq') AS n`);
     const orderNo = `KAO${new Date().getFullYear().toString().slice(2)}-${seq.rows[0].n.padStart(6, '0')}`;
     const order = await client.query<{ id: string }>(
       `INSERT INTO orders (order_no, event_id, organization_id, buyer_user_id, checkout_session_id,
                            subtotal_satang, discount_satang, fee_satang, total_satang, coupon_id,
-                           buyer_name, buyer_email, buyer_phone, billing_info, idempotency_key, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+                           buyer_name, buyer_email, buyer_phone, billing_info, idempotency_key, expires_at, platform_fee_satang)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
       [
         orderNo, session.event_id, session.organization_id, userId, session.id,
         totals.subtotalSatang, totals.discountSatang, totals.feeSatang, totals.totalSatang, coupon?.id ?? null,
         input.buyer.name, input.buyer.email, input.buyer.phone, input.billing ? JSON.stringify(input.billing) : null,
-        idempotencyKey, session.expires_at,
+        idempotencyKey, session.expires_at, platformFeeSatang,
       ],
     );
     const orderId = order.rows[0].id;
@@ -272,6 +274,18 @@ export class OrdersService {
       })),
       payment: payment.rows[0] ? paymentView(payment.rows[0]) : null,
     };
+  }
+
+  /** The organisation's own rate if it has one in force, else the platform default, else none. */
+  private async platformFeePlan(client: PoolClient, organizationId: string): Promise<PlatformFeePlan | null> {
+    const { rows } = await client.query<{ percent_bps: number; fixed_per_reg_satang: string }>(
+      `SELECT percent_bps, fixed_per_reg_satang FROM platform_fees
+        WHERE (organization_id = $1 OR organization_id IS NULL)
+          AND effective_from <= now() AND (effective_to IS NULL OR effective_to > now())
+        ORDER BY organization_id NULLS LAST, effective_from DESC LIMIT 1`,
+      [organizationId],
+    );
+    return rows[0] ? { percentBps: rows[0].percent_bps, fixedPerRegistrationSatang: Number(rows[0].fixed_per_reg_satang) } : null;
   }
 
   private assertParticipantsMatchHolds(items: SessionItems, participants: CreateOrderInput['participants']): void {
