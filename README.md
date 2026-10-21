@@ -26,6 +26,7 @@ pnpm dev:api                         # http://localhost:4000/v1
 | ดูงาน | `GET /v1/events`, `GET /v1/events/:slug`, `GET /v1/events/:slug/availability` |
 | เข้าสู่ระบบ (ชั่วคราว) | `POST /v1/dev/login` (เปิดเฉพาะ `ENABLE_DEV_ENDPOINTS=true`) |
 | จองที่ 15 นาที | `POST /v1/checkout/sessions`, `GET`/`DELETE /v1/checkout/sessions/:id` |
+| เลือก/เปลี่ยนไซซ์เสื้อ | `PUT /v1/checkout/sessions/:id/variants` (ก่อนสร้างคำสั่งซื้อ) |
 | สร้างคำสั่งซื้อ | `POST /v1/orders` (ต้องส่ง `Idempotency-Key`) |
 | ชำระเงิน | `POST /v1/orders/:id/payments` (`promptpay`, `card`, `mobile_banking`) |
 | ยืนยันการจ่าย | `POST /v1/webhooks/payments/:gateway` |

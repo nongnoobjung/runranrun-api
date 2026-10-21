@@ -111,6 +111,63 @@ export class CheckoutService {
     });
   }
 
+  /**
+   * Replaces the shirt/add-on holds of an open checkout. Lets the web app take the race places
+   * immediately and ask for sizes on the next screen. All-or-nothing: if one size is sold out,
+   * the previous sizes stay held.
+   */
+  async setVariants(userId: string, sessionId: string, input: { variantId: string; quantity: number }[]) {
+    const variants = mergeQuantities(input.map((v) => [v.variantId, v.quantity]));
+    return this.dbs.transaction(async (_tx, client) => {
+      const { rows } = await client.query(
+        'SELECT id, user_id, event_id, status, items, expires_at FROM checkout_sessions WHERE id = $1 FOR UPDATE',
+        [sessionId],
+      );
+      const s = rows[0];
+      if (!s || s.user_id !== userId) throw problems.notFound('Checkout session');
+      if (s.status !== 'active' || s.expires_at <= new Date()) {
+        throw new ProblemException(409, 'CHECKOUT_EXPIRED', 'Your reserved places have expired. Start again to check availability.');
+      }
+      const ordered = await client.query(
+        `SELECT 1 FROM orders WHERE checkout_session_id = $1 AND status IN ('pending_payment', 'paid')`,
+        [sessionId],
+      );
+      if (ordered.rowCount) throw new ProblemException(409, 'ORDER_EXISTS', 'Sizes cannot change after the order is created');
+
+      const info = variants.size
+        ? await client.query<{ id: string; label: string; product_id: string; unit_price: string }>(
+            `SELECT v.id, v.label, v.product_id,
+                    CASE WHEN p.included_in_race THEN 0 ELSE p.price_satang END + v.price_delta_satang AS unit_price
+               FROM product_variants v JOIN products p ON p.id = v.product_id
+              WHERE p.event_id = $1 AND v.id = ANY($2::uuid[])`,
+            [s.event_id, [...variants.keys()]],
+          )
+        : { rows: [] };
+      if (info.rows.length !== variants.size) throw problems.validation('One of the items does not belong to this event');
+
+      await this.inventory.releaseVariantHolds(client, sessionId);
+      for (const [variantId, quantity] of [...variants.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+        await this.inventory.reserveVariant(client, variantId, quantity);
+        await client.query(
+          `INSERT INTO inventory_holds (checkout_session_id, product_variant_id, quantity, expires_at) VALUES ($1, $2, $3, $4)`,
+          [sessionId, variantId, quantity, s.expires_at],
+        );
+      }
+      const items: SessionItems = {
+        races: (s.items as SessionItems).races,
+        variants: info.rows.map((v) => ({
+          variantId: v.id,
+          label: v.label,
+          productId: v.product_id,
+          quantity: variants.get(v.id)!,
+          unitPriceSatang: Number(v.unit_price),
+        })),
+      };
+      await client.query('UPDATE checkout_sessions SET items = $2 WHERE id = $1', [sessionId, JSON.stringify(items)]);
+      return { id: sessionId, eventId: s.event_id, status: 'active', expiresAt: s.expires_at, items };
+    });
+  }
+
   async get(userId: string, sessionId: string) {
     const { rows } = await this.dbs.pool.query(
       `SELECT id, event_id, user_id, status, items, expires_at FROM checkout_sessions WHERE id = $1`,

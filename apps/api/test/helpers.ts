@@ -47,7 +47,7 @@ export interface Res<T = any> {
 
 export async function call<T = any>(
   app: NestFastifyApplication,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   url: string,
   opts: { token?: string; body?: unknown; headers?: Record<string, string>; raw?: string } = {},
 ): Promise<Res<T>> {

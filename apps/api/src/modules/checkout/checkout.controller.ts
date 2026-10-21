@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { parse, uuidSchema } from '../../common/validation';
@@ -16,6 +16,12 @@ const createSchema = z.object({
     .default([]),
 });
 
+const variantsSchema = z.object({
+  variants: z
+    .array(z.object({ variantId: z.string().uuid(), quantity: z.number().int().min(1).max(MAX_RUNNERS_PER_ORDER) }))
+    .max(30),
+});
+
 @Controller('checkout/sessions')
 @UseGuards(AuthGuard)
 export class CheckoutController {
@@ -29,6 +35,12 @@ export class CheckoutController {
   @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.checkout.get(user.id, parse(uuidSchema, id));
+  }
+
+  @Put(':id/variants')
+  setVariants(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    const { variants } = parse(variantsSchema, body);
+    return this.checkout.setVariants(user.id, parse(uuidSchema, id), variants);
   }
 
   @Delete(':id')
