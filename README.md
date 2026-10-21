@@ -150,6 +150,17 @@ pnpm dev:api                         # http://localhost:4000/v1
   - จ่ายเงิน: `GET /v1/admin/payouts` (ยอดค้างต่องาน + รอบจ่าย), `POST .../events/:id/settlements` (รอบใหม่ = ยอดที่ยังไม่อยู่ในรอบก่อน หักคืนเงินที่อนุมัติและค่าธรรมเนียมแพลตฟอร์ม ผูก `orders.settlement_id`), `POST .../settlements/:id/approve` (สร้าง payout ไปบัญชีที่ตรวจแล้ว), `.../paid` (`transferRef`), `.../void` (ยอดไปรวมรอบถัดไป)
   - ทุกการกระทำบันทึกใน `audit_logs` (`admin.*`)
   - `pnpm db:seed` สร้าง `admin@kao.example` (superadmin) และผู้จัดตัวอย่างที่รอ KYC `organizer@mountain.example` ส่วน `POST /v1/dev/organizations` สร้างทีมใหม่ (รอ KYC และรอตรวจงาน) ให้ e2e
+- **Rate limit:** นับใน Redis (ทุก instance ใช้ตัวนับเดียวกัน ไม่มี Redis นับในหน่วยความจำของ instance) เกินแล้วได้ 429 `RATE_LIMITED` พร้อม `Retry-After` และ `retryAfterSeconds`
+  - จำกัดต่อ IP และต่อผู้ใช้ (ถ้า login): login, ดูงานสาธารณะ (รายการ ค้นหา รายละเอียด ที่ว่าง ผล), คิว, สร้าง checkout, สร้าง order, สร้าง payment ค่าเริ่มต้นใน `RATE_LIMIT_POLICIES` (`src/common/rate-limit.ts`)
+  - ต่อ IP ตั้งไว้กว้างเพราะเครือข่ายมือถือให้หลายคนใช้ IP เดียวกัน (CGNAT) ต่อผู้ใช้จึงเป็นตัวที่เข้มกว่า เช่น checkout 10 ครั้ง/นาที/คน
+  - เปลี่ยนได้ด้วย `RATE_LIMITS=checkout.user=10/60,public.ip=1200/60` ปิดทั้งหมดด้วย `RATE_LIMIT_ENABLED=false` (test ปิดไว้ ยกเว้น test ที่เปิดเอง)
+  - เว็บเรียก API จาก server เสมอ จึงส่ง IP ของผู้ใช้มาใน `x-kao-client-ip` คู่กับ `x-kao-proxy-secret` = `WEB_PROXY_SECRET` (ตั้งค่าเดียวกันทั้งสองฝั่ง) ไม่มี secret ที่ตรงกันจะใช้ IP ของผู้เรียกเอง
+- **Waiting room:** ผู้จัดเปิด `useWaitingRoom` และตั้ง `queueAdmitPerMinute` (1–10,000 คน/นาที ค่าเริ่มต้น 100) ใน `PATCH .../events/:id` production ต้องมี Redis (`WAITING_ROOM_UNAVAILABLE`) ตอนพัฒนาไม่มี Redis ใช้คิวในหน่วยความจำ (instance เดียว)
+  - นักวิ่งเข้าคิว `POST /v1/checkout/queue` (`eventId`) แล้วดูสถานะ `GET /v1/checkout/queue/:eventId`: ลำดับ, จำนวนที่รอ, เวลารอโดยประมาณ เข้าซ้ำได้ลำดับเดิม เข้าคิวได้ก่อนเปิดรับสมัคร
+  - คิวเป็น sorted set ใน Redis (score = เลขลำดับที่เพิ่มทีละหนึ่ง เข้าพร้อมกันกี่คนลำดับก็ไม่ซ้ำ ดูลำดับด้วย ZRANK) คนรอนับหมื่นคนที่ refresh ทุกไม่กี่วินาทีจึงไม่ไปถึง Postgres
+  - job `admit-waiting-rooms` ทุก `WAITING_ROOM_TICK_SECONDS` (5 วินาที) ปล่อยคนหน้าคิวตามอัตราของงาน ไม่มีงานไหนมีคิวก็แค่อ่าน set ว่างหนึ่งครั้ง ยังไม่เปิดรับสมัครยังไม่ปล่อย ผู้จัดปิด waiting room แล้วคิวถูกล้าง
+  - ถึงคิวได้ token ที่เซ็นด้วย HMAC ผูกกับผู้ใช้และงาน อายุ `WAITING_ROOM_TOKEN_MINUTES` (10 นาที) ส่งใน header `X-Queue-Admission` ตอน `POST /v1/checkout/sessions` ไม่มี/ผิด = 403 `QUEUE_REQUIRED` หมดอายุ = 403 `QUEUE_TOKEN_EXPIRED` (เข้าคิวใหม่ได้) ตรวจ token ไม่ต้องใช้ Redis
+  - token ที่ใช้เก็บใน `checkout_sessions.queue_token` รับสิทธิ์จาก waitlist ไม่ต้องเข้าคิว (มีที่กันไว้แล้ว) `POST /v1/dev/events/:eventId/queue/admit` ปล่อยคิวทันทีสำหรับ e2e
 - **ผู้จัดตัวอย่าง:** `pnpm db:seed` สร้างบัญชี `organizer@riverside.example` เป็น owner ของผู้จัด Riverside (login ผ่าน `/v1/dev/login`)
 
 ตอนพัฒนาใช้ `PAYMENT_GATEWAY=fake` แล้วจำลองการจ่ายด้วย
@@ -195,10 +206,14 @@ test สร้างฐานข้อมูลชั่วคราวบน Po
 - ค้นหางาน: ช่วงระยะ, จังหวัด, เดือน, เปิดรับอยู่ (ไม่นับระยะที่เต็มหรือยังไม่เปิด), จังหวัดและเดือนที่มีงาน
 - โอนสิทธิ์และเปลี่ยนระยะ: โอนฟรีจนบิบย้ายไปผู้รับ, นโยบาย/โอนให้ตัวเอง/อายุผู้รับ, ค่าธรรมเนียมจ่ายแล้วจึงย้าย หมดเวลากลับไปรอ ผู้ส่งยกเลิกแล้วคืนเงิน, เปลี่ยนขึ้นจ่ายส่วนต่างได้บิบใหม่, เปลี่ยนลงทันที, ที่ที่จองหมดเวลาคืน, ผู้จัดย้ายระยะ
 - ทีมงาน: เชิญแล้ว login เข้าทีม, เชิญซ้ำ, owner คนสุดท้าย (รวมสอง owner ลดบทบาทกันพร้อมกัน), ถอนคำเชิญ
+- rate limit: 429 + `Retry-After` เมื่อเปิด, สอง instance ใช้ตัวนับเดียวกัน (เมื่อมี Redis), IP ที่ส่งต่อเชื่อเฉพาะเมื่อ secret ตรง, จำกัดต่อผู้ใช้, ปิดได้, ไม่มี Redis นับในหน่วยความจำ
+- waiting room: ลำดับ/ตำแหน่ง/เวลารอ, ปล่อยตามอัตราในแต่ละรอบ, ยังไม่เปิดไม่ปล่อย, checkout ต้องมี token (ไม่มี ปลอม ของคนอื่น ของงานอื่น หมดอายุ), 60 คนเข้าพร้อมกันลำดับไม่ซ้ำ, ปิดแล้วล้างคิว, ผู้จัดตั้งค่า, production ไม่มี Redis เปิดไม่ได้
+
+test ของ waiting room และ rate limit ใช้ Redis จริงถ้าต่อได้ (`TEST_REDIS_URL` ค่าเริ่มต้น `redis://127.0.0.1:6379` แยก key ด้วย prefix สุ่มต่อรอบ) ต่อไม่ได้จะใช้ตัวเก็บในหน่วยความจำแทน
 
 ## ยังไม่ได้ทำ (ขั้นถัดไป)
 
 - Login จริง (LINE Login, OTP) แทน `/v1/dev/login`
 - คืนเงินผ่าน gateway (บัตร)
 - Storage บน S3/R2 สำหรับ production (ตอนนี้มีแค่ local disk)
-- Rate limit / waiting room, ส่งอีเมลและ LINE, ทดสอบกับ Omise test keys จริง
+- ส่งอีเมลและ LINE, ทดสอบกับ Omise test keys จริง

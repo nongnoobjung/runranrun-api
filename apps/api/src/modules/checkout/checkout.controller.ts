@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
+import { RateLimit } from '../../common/rate-limit';
 import { parse, uuidSchema } from '../../common/validation';
 import { CheckoutService, MAX_RUNNERS_PER_ORDER } from './checkout.service';
 
@@ -28,8 +29,10 @@ export class CheckoutController {
   constructor(private readonly checkout: CheckoutService) {}
 
   @Post()
-  create(@CurrentUser() user: AuthUser, @Body() body: unknown) {
-    return this.checkout.create(user.id, parse(createSchema, body));
+  @RateLimit('checkout')
+  /** For an event with a waiting room, `X-Queue-Admission` carries the token the queue gave this runner. */
+  create(@CurrentUser() user: AuthUser, @Body() body: unknown, @Headers('x-queue-admission') queueToken: string | undefined) {
+    return this.checkout.create(user.id, parse(createSchema, body), { queueToken });
   }
 
   @Get(':id')

@@ -4,6 +4,7 @@ import { PoolClient } from 'pg';
 import { z } from 'zod';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
+import { WaitingRoomService } from '../waiting-room/waiting-room.service';
 import { writeAudit } from './org-access.service';
 import { EVENT_IMAGE_URL, loadGallery } from './org-event-images.service';
 
@@ -46,6 +47,9 @@ export const eventFieldsSchema = z.object({
   refundPercentBps: z.number().int().min(0).max(10_000),
   /** Let runners queue for a race once it is full. */
   waitlistEnabled: z.boolean(),
+  /** Runners queue and are let into checkout in batches, for launches that would otherwise be a stampede. */
+  useWaitingRoom: z.boolean(),
+  queueAdmitPerMinute: z.number().int().min(1).max(10_000),
   allowTransfer: z.boolean(),
   /** Paid by the person taking the place over. */
   transferFeeSatang: z.number().int().min(0).max(100_000_00),
@@ -85,6 +89,8 @@ const EVENT_COLUMNS: Record<keyof EventFields, string> = {
   refundDeadline: 'refund_deadline',
   refundPercentBps: 'refund_percent_bps',
   waitlistEnabled: 'waitlist_enabled',
+  useWaitingRoom: 'use_waiting_room',
+  queueAdmitPerMinute: 'queue_admit_per_minute',
   allowTransfer: 'allow_transfer',
   transferFeeSatang: 'transfer_fee_satang',
   transferDeadline: 'transfer_deadline',
@@ -150,7 +156,10 @@ const columnValue = (c: keyof EventFields, v: unknown) => (c === 'faq' ? JSON.st
 
 @Injectable()
 export class OrgEventsService {
-  constructor(private readonly dbs: DbService) {}
+  constructor(
+    private readonly dbs: DbService,
+    private readonly waitingRoom: WaitingRoomService,
+  ) {}
 
   async list(orgId: string) {
     const { rows } = await this.dbs.pool.query(
@@ -177,6 +186,7 @@ export class OrgEventsService {
   async create(userId: string, orgId: string, input: z.infer<typeof createEventSchema>) {
     const slug = input.slug ?? slugify(input.nameEn ?? '') ?? `event-${randomBytes(3).toString('hex')}`;
     const fields: Partial<EventFields> = { ...input, slug };
+    this.checkWaitingRoom(fields);
     const cols = Object.keys(fields) as (keyof EventFields)[];
     try {
       return await this.dbs.transaction(async (_tx, client) => {
@@ -235,6 +245,7 @@ export class OrgEventsService {
       gallery: await loadGallery(client, e.id, e.gallery),
       registrationOpensAt: e.registration_opens_at, registrationClosesAt: e.registration_closes_at, holdMinutes: e.hold_minutes,
       allowRefund: e.allow_refund, refundDeadline: e.refund_deadline, refundPercentBps: e.refund_percent_bps, waitlistEnabled: e.waitlist_enabled,
+      useWaitingRoom: e.use_waiting_room, queueAdmitPerMinute: e.queue_admit_per_minute,
       allowTransfer: e.allow_transfer, transferFeeSatang: Number(e.transfer_fee_satang), transferDeadline: e.transfer_deadline,
       allowRaceChange: e.allow_race_change, raceChangeFeeSatang: Number(e.race_change_fee_satang), raceChangeDeadline: e.race_change_deadline,
       publishedAt: e.published_at, races: raceViews, shirt, readiness,
@@ -245,6 +256,7 @@ export class OrgEventsService {
   async update(userId: string, orgId: string, eventId: string, patch: Partial<EventFields>) {
     const cols = Object.keys(patch) as (keyof EventFields)[];
     if (cols.length === 0) return this.get(orgId, eventId);
+    this.checkWaitingRoom(patch);
     try {
       return await this.dbs.transaction(async (_tx, client) => {
         const before = await client.query('SELECT status, slug FROM events WHERE id = $1 FOR UPDATE', [eventId]);
@@ -261,6 +273,13 @@ export class OrgEventsService {
       });
     } catch (err) {
       throw translate(err);
+    }
+  }
+
+  /** In production the queue lives in Redis: without it nobody could ever be let in, so it cannot be turned on. */
+  private checkWaitingRoom(fields: Partial<EventFields>): void {
+    if (fields.useWaitingRoom && !this.waitingRoom.available) {
+      throw new ProblemException(409, 'WAITING_ROOM_UNAVAILABLE', 'The waiting room needs Redis, which this server does not have');
     }
   }
 

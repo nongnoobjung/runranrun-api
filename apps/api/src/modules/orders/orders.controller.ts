@@ -3,6 +3,7 @@ import { FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { IdempotencyService } from '../../common/idempotency.service';
+import { RateLimit } from '../../common/rate-limit';
 import { parse, uuidSchema } from '../../common/validation';
 import { MAX_RUNNERS_PER_ORDER } from '../checkout/checkout.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -48,6 +49,7 @@ export class OrdersController {
   ) {}
 
   @Post()
+  @RateLimit('order')
   async create(
     @CurrentUser() user: AuthUser,
     @Headers('idempotency-key') key: string | undefined,
@@ -69,6 +71,7 @@ export class OrdersController {
   }
 
   @Post(':id/payments')
+  @RateLimit('payment')
   async pay(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,

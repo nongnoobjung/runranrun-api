@@ -298,6 +298,8 @@ CREATE TABLE events (
   refund_percent_bps  INTEGER NOT NULL DEFAULT 0 CHECK (refund_percent_bps BETWEEN 0 AND 10000),
   waitlist_enabled    BOOLEAN NOT NULL DEFAULT false,
   use_waiting_room    BOOLEAN NOT NULL DEFAULT false,
+  queue_admit_per_minute INTEGER NOT NULL DEFAULT 100   -- waiting room ปล่อยเข้า checkout กี่คนต่อนาที (คิวอยู่ใน Redis)
+                      CHECK (queue_admit_per_minute BETWEEN 1 AND 10000),
   hold_minutes        SMALLINT NOT NULL DEFAULT 15 CHECK (hold_minutes BETWEEN 5 AND 120),
   is_featured         BOOLEAN NOT NULL DEFAULT false,
   results_published_at TIMESTAMPTZ,

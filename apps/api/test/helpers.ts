@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { createApp } from '../src/app.factory';
 import { AppConfig, loadConfig } from '../src/config';
 import { DbService } from '../src/db/db.service';
+import { RedisService } from '../src/common/redis.service';
 import { createEvent, EventFixture } from '../db/fixtures';
 import { FAKE_SIGNATURE_HEADER, fakeChargeCompleteBody, signFakeWebhook } from '../src/modules/payments/fake.gateway';
 import { PaymentGateway } from '../src/modules/payments/gateway';
@@ -22,6 +23,8 @@ export function testConfig(overrides: Partial<Record<string, string>> = {}): App
     PAYMENT_GATEWAY: 'fake',
     FAKE_GATEWAY_SECRET: FAKE_SECRET,
     ENABLE_DEV_ENDPOINTS: 'true',
+    // Tests that are about limits turn them on; everything else makes many requests from one address.
+    RATE_LIMIT_ENABLED: 'false',
     STORAGE_LOCAL_DIR: process.env.TEST_STORAGE_DIR,
     ...overrides,
   });
@@ -33,8 +36,8 @@ export interface TestContext {
   close(): Promise<void>;
 }
 
-export async function bootApp(overrides: { gateway?: PaymentGateway } = {}): Promise<TestContext> {
-  const app = await createApp(testConfig(), overrides);
+export async function bootApp(overrides: { gateway?: PaymentGateway; config?: Partial<Record<string, string>> } = {}): Promise<TestContext> {
+  const app = await createApp(testConfig(overrides.config), overrides);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   const pool = app.get(DbService).pool;
@@ -153,4 +156,21 @@ export function multipart(fields: Record<string, string>, file?: { name: string;
   }
   parts.push(Buffer.from(`--${boundary}--\r\n`));
   return { payload: Buffer.concat(parts), headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } };
+}
+
+/**
+ * Redis for the waiting room and rate limit tests when global-setup found one, under a prefix of its own so runs
+ * never see each other's keys; otherwise nothing, and those tests run on the in-memory stores.
+ */
+export function testRedisConfig(): Record<string, string> {
+  const url = process.env.TEST_REDIS_URL;
+  return url ? { REDIS_URL: url, REDIS_KEY_PREFIX: `kao-test-${randomUUID().slice(0, 8)}:` } : {};
+}
+
+/** Removes the keys a test app wrote under its prefix. */
+export async function clearTestRedis(app: NestFastifyApplication): Promise<void> {
+  const redis = app.get(RedisService);
+  if (!redis.client) return;
+  const keys = await redis.client.keys(`${redis.prefix}*`);
+  if (keys.length) await redis.client.del(...keys);
 }
