@@ -21,7 +21,7 @@ const schema = z.object({
   PUBLIC_WEB_URL: z.string().url().default('http://localhost:3000'),
   /** How long a waitlist offer holds a place for the runner before it passes to the next in line. */
   WAITLIST_OFFER_HOURS: z.coerce.number().positive().max(168).default(24),
-  /** Where private files (KYC documents) go. Only `local` for now; an S3/R2 driver can be added behind FileStorage. */
+  /** Where files go: private KYC documents and public event images. Only `local` for now; an S3/R2 driver can be added behind FileStorage. */
   STORAGE_DRIVER: z.enum(['local']).default('local'),
   /** Directory for the local driver, relative to the working directory unless absolute. */
   STORAGE_LOCAL_DIR: z.string().min(1).default('storage'),
