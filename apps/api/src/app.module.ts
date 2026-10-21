@@ -13,9 +13,12 @@ import { HoldReleaseService } from './modules/inventory/hold-release.service';
 import { InventoryService } from './modules/inventory/inventory.service';
 import { JobsService } from './modules/jobs/jobs.service';
 import { MeController } from './modules/me/me.controller';
+import { EMAIL_SENDER, FakeEmailSender } from './modules/notifications/email-sender';
+import { NotificationsService } from './modules/notifications/notifications.service';
 import { OrgAccessService } from './modules/org/org-access.service';
 import { OrgController } from './modules/org/org.controller';
 import { OrgBibsService } from './modules/org/org-bibs.service';
+import { OrgBroadcastsService } from './modules/org/org-broadcasts.service';
 import { OrgCouponsService } from './modules/org/org-coupons.service';
 import { OrgEventsService } from './modules/org/org-events.service';
 import { OrgFinanceService } from './modules/org/org-finance.service';
@@ -87,6 +90,9 @@ export class AppModule {
         OrgRegistrationsService,
         OrgMembersService,
         OrgQuestionsService,
+        { provide: EMAIL_SENDER, useClass: FakeEmailSender },
+        NotificationsService,
+        OrgBroadcastsService,
         OrgFinanceService,
         OrgBibsService,
         RefundsService,

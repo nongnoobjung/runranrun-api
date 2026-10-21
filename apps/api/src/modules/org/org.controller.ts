@@ -5,6 +5,7 @@ import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { cancelSchema, refundListSchema, RefundsService, rejectSchema, transferredSchema } from '../refunds/refunds.service';
 import { OrgAccessService } from './org-access.service';
+import { broadcastFieldsSchema, createBroadcastSchema, OrgBroadcastsService, previewSchema, sendSchema } from './org-broadcasts.service';
 import { OrgFinanceService, transactionsQuerySchema } from './org-finance.service';
 import { assignSchema, importSchema, OrgBibsService, setBibSchema } from './org-bibs.service';
 import { couponFieldsSchema, createCouponSchema, OrgCouponsService } from './org-coupons.service';
@@ -38,6 +39,7 @@ export class OrgController {
     private readonly coupons: OrgCouponsService,
     private readonly registrations: OrgRegistrationsService,
     private readonly members: OrgMembersService,
+    private readonly broadcasts: OrgBroadcastsService,
     private readonly refunds: RefundsService,
     private readonly finance: OrgFinanceService,
     private readonly questions: OrgQuestionsService,
@@ -367,6 +369,70 @@ export class OrgController {
   ) {
     const e = await this.eventAccess(user, orgId, eventId, 'manage_refunds');
     return this.refunds.cancelRegistration(user.id, e.organizationId, e.eventId, parse(uuidSchema, registrationId), parse(cancelSchema, body));
+  }
+
+  @Get(':orgId/events/:eventId/broadcasts')
+  async listBroadcasts(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.broadcasts.list(e.eventId);
+  }
+
+  @Post(':orgId/events/:eventId/broadcasts/preview')
+  @HttpCode(200)
+  async previewBroadcast(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.broadcasts.preview(e.eventId, parse(previewSchema, body ?? {}));
+  }
+
+  @Post(':orgId/events/:eventId/broadcasts')
+  async createBroadcast(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.broadcasts.create(user.id, e.organizationId, e.eventId, parse(createBroadcastSchema, body));
+  }
+
+  @Patch(':orgId/events/:eventId/broadcasts/:broadcastId')
+  async updateBroadcast(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Param('broadcastId') broadcastId: string,
+    @Body() body: unknown,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.broadcasts.update(user.id, e.organizationId, e.eventId, parse(uuidSchema, broadcastId), parse(broadcastFieldsSchema.partial(), body));
+  }
+
+  @Delete(':orgId/events/:eventId/broadcasts/:broadcastId')
+  async deleteBroadcast(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Param('broadcastId') broadcastId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.broadcasts.remove(user.id, e.organizationId, e.eventId, parse(uuidSchema, broadcastId));
+  }
+
+  @Post(':orgId/events/:eventId/broadcasts/:broadcastId/test')
+  @HttpCode(200)
+  async testBroadcast(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Param('broadcastId') broadcastId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.broadcasts.sendTest(user.id, e.eventId, parse(uuidSchema, broadcastId));
+  }
+
+  @Post(':orgId/events/:eventId/broadcasts/:broadcastId/send')
+  @HttpCode(200)
+  async sendBroadcast(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Param('broadcastId') broadcastId: string,
+    @Body() body: unknown,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.broadcasts.send(user.id, e.organizationId, e.eventId, parse(uuidSchema, broadcastId), parse(sendSchema, body ?? {}).scheduledAt);
+  }
+
+  @Post(':orgId/events/:eventId/broadcasts/:broadcastId/unschedule')
+  @HttpCode(200)
+  async unscheduleBroadcast(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Param('broadcastId') broadcastId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.broadcasts.unschedule(user.id, e.organizationId, e.eventId, parse(uuidSchema, broadcastId));
   }
 
   @Get(':orgId/events/:eventId/registrations')
