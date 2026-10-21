@@ -1,0 +1,15 @@
+{
+  "name": "kao-run",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:api": "pnpm --filter @kao/api dev",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:migrate": "pnpm --filter @kao/api db:migrate",
+    "db:seed": "pnpm --filter @kao/api db:seed"
+  }
+}

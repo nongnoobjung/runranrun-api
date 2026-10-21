@@ -1,0 +1,4722 @@
+openapi: 3.1.0
+info:
+  title: Running Event Platform API
+  version: 1.0.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  summary: API สำหรับแพลตฟอร์มรับสมัครงานวิ่ง (นักวิ่ง / ผู้จัดงาน / Staff / แอดมิน)
+  description: |
+    API ของแพลตฟอร์มรับสมัครงานวิ่ง แบบเดียวกับ thai.run / RunSignup
+
+    ข้อตกลงทั่วไป
+    - จำนวนเงินทุกฟิลด์เป็น **integer หน่วยสตางค์** (เช่น 59000 = 590.00 บาท) สกุลเงิน THB
+    - เวลาเป็น ISO 8601 (UTC) เว้นแต่ระบุไว้
+    - Error ใช้รูปแบบ RFC 7807 (`application/problem+json`)
+    - POST ที่เกี่ยวกับเงินต้องส่ง header `Idempotency-Key`
+    - รายการแบบแบ่งหน้าใช้ `page` / `per_page` และตอบกลับด้วย envelope `{ data, meta }`
+servers:
+  - url: https://api.example.run/v1
+    description: Production
+
+tags:
+  - name: Auth
+    description: สมัครสมาชิก / เข้าสู่ระบบ
+  - name: Me
+    description: ข้อมูลบัญชีและโปรไฟล์ของนักวิ่ง
+  - name: My Registrations
+    description: งานที่สมัคร โอนสิทธิ์ เปลี่ยนระยะ ขอคืนเงิน
+  - name: Public Events
+    description: ค้นหาและดูรายละเอียดงานวิ่ง (ไม่ต้องล็อกอิน)
+  - name: Public Results
+    description: ผลการแข่งขันและใบประกาศ
+  - name: Waitlist
+    description: รายชื่อรอเมื่อโควต้าเต็ม
+  - name: Checkout
+    description: จองโควต้าและสร้างคำสั่งซื้อ
+  - name: Payments
+    description: ชำระเงินและ webhook จาก payment gateway
+  - name: Org Events
+    description: ผู้จัดงาน - จัดการงาน ระยะ ราคา สินค้า ฟอร์ม คูปอง
+  - name: Org Registrations
+    description: ผู้จัดงาน - จัดการผู้สมัคร บิบ export
+  - name: Org Results
+    description: ผู้จัดงาน - นำเข้าและเผยแพร่ผลการแข่งขัน
+  - name: Org Communication
+    description: ผู้จัดงาน - ส่งข้อความถึงผู้สมัคร
+  - name: Org Team
+    description: ผู้จัดงาน - สมาชิกทีมและบัญชี staff
+  - name: Org Finance
+    description: ผู้จัดงาน - ธุรกรรมและการโอนเงิน
+  - name: Checkin
+    description: Staff หน้างาน - สแกน QR รับเสื้อ/บิบ
+  - name: Admin
+    description: แอดมินแพลตฟอร์ม
+
+security:
+  - userAuth: []
+
+paths:
+  # ───────────────────────── Auth ─────────────────────────
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: authRegister
+      summary: สมัครสมาชิกด้วยอีเมล
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, accept_terms]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                phone: { type: string }
+                accept_terms: { type: boolean }
+                consents: { $ref: '#/components/schemas/Consents' }
+      responses:
+        '201':
+          description: สมัครสำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: authLogin
+      summary: เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/otp:
+    post:
+      tags: [Auth]
+      operationId: authRequestOtp
+      summary: ขอรหัส OTP ทางเบอร์โทรหรืออีเมล
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, destination]
+              properties:
+                channel: { type: string, enum: [sms, email] }
+                destination: { type: string }
+      responses:
+        '202':
+          description: ส่ง OTP แล้ว
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  otp_ref: { type: string }
+                  expires_at: { type: string, format: date-time }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/otp/verify:
+    post:
+      tags: [Auth]
+      operationId: authVerifyOtp
+      summary: ยืนยัน OTP และรับ token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [otp_ref, code]
+              properties:
+                otp_ref: { type: string }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/oauth/{provider}:
+    post:
+      tags: [Auth]
+      operationId: authOAuth
+      summary: เข้าสู่ระบบผ่าน LINE / Google / Facebook
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [line, google, facebook] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, redirect_uri]
+              properties:
+                code: { type: string, description: 'authorization code จาก provider' }
+                redirect_uri: { type: string, format: uri }
+                code_verifier: { type: string, description: 'PKCE verifier' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: authRefresh
+      summary: ต่ออายุ access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: authLogout
+      summary: ออกจากระบบ (เพิกถอน refresh token)
+      responses:
+        '204': { description: 'สำเร็จ' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ───────────────────────── Me ─────────────────────────
+  /me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: ข้อมูลบัญชีของฉัน
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Me]
+      operationId: updateMe
+      summary: แก้ไขข้อมูลบัญชี / consent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdate' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Me]
+      operationId: deleteMe
+      summary: ขอลบบัญชีและข้อมูลส่วนบุคคล (PDPA)
+      responses:
+        '202': { description: 'รับคำขอแล้ว จะดำเนินการภายในระยะเวลาที่กฎหมายกำหนด' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /me/profiles:
+    get:
+      tags: [Me]
+      operationId: listMyProfiles
+      summary: รายการโปรไฟล์นักวิ่ง (ตัวเอง + เพื่อน/ครอบครัว)
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/RunnerProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Me]
+      operationId: createMyProfile
+      summary: เพิ่มโปรไฟล์นักวิ่ง
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RunnerProfileInput' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunnerProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /me/profiles/{profileId}:
+    parameters:
+      - $ref: '#/components/parameters/ProfileId'
+    get:
+      tags: [Me]
+      operationId: getMyProfile
+      summary: ดูโปรไฟล์นักวิ่ง
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunnerProfile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Me]
+      operationId: updateMyProfile
+      summary: แก้ไขโปรไฟล์นักวิ่ง
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RunnerProfileInput' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunnerProfile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Me]
+      operationId: deleteMyProfile
+      summary: ลบโปรไฟล์นักวิ่ง
+      responses:
+        '204': { description: 'ลบแล้ว' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /me/orders:
+    get:
+      tags: [Me]
+      operationId: listMyOrders
+      summary: ประวัติคำสั่งซื้อของฉัน
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /me/orders/{orderId}/receipt:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Me]
+      operationId: getMyOrderReceipt
+      summary: ดาวน์โหลดใบเสร็จ / ใบกำกับภาษี (PDF)
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [receipt, tax_invoice], default: receipt }
+      responses:
+        '200':
+          description: ไฟล์ PDF
+          content:
+            application/pdf:
+              schema: { type: string, contentMediaType: application/pdf }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /me/orders/{orderId}/tax-invoice:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Me]
+      operationId: requestTaxInvoice
+      summary: ขอใบกำกับภาษีเต็มรูป (ระบุชื่อบริษัท / เลขผู้เสียภาษี)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaxInfo' }
+      responses:
+        '202': { description: 'รับคำขอแล้ว' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ───────────────────────── My Registrations ─────────────────────────
+  /me/registrations:
+    get:
+      tags: [My Registrations]
+      operationId: listMyRegistrations
+      summary: งานที่ฉันสมัคร (รวมที่สมัครให้คนอื่น)
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/RegistrationStatus' }
+        - name: upcoming
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistrationPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /me/registrations/{registrationId}:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    get:
+      tags: [My Registrations]
+      operationId: getMyRegistration
+      summary: รายละเอียดการสมัคร (บิบ, QR สำหรับรับของ)
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Registration' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [My Registrations]
+      operationId: updateMyRegistration
+      summary: แก้ไขข้อมูลที่ผู้จัดอนุญาต (เช่น ไซซ์เสื้อ ผู้ติดต่อฉุกเฉิน) ก่อนวันปิดแก้ไข
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shirt_variant_id: { type: string, format: uuid }
+                emergency_contact: { $ref: '#/components/schemas/EmergencyContact' }
+                answers:
+                  type: array
+                  items: { $ref: '#/components/schemas/FormAnswer' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Registration' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/SoldOut' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /me/registrations/{registrationId}/transfer:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    post:
+      tags: [My Registrations]
+      operationId: requestTransfer
+      summary: โอนสิทธิ์ให้ผู้อื่น (ผู้รับต้องยืนยันและกรอกข้อมูล)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipient_email]
+              properties:
+                recipient_email: { type: string, format: email }
+                message: { type: string, maxLength: 500 }
+      responses:
+        '201':
+          description: สร้างคำขอโอนสิทธิ์แล้ว (อาจมีค่าธรรมเนียมที่ต้องชำระ)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transfer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /transfers/{transferId}/accept:
+    parameters:
+      - name: transferId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [My Registrations]
+      operationId: acceptTransfer
+      summary: ผู้รับยืนยันรับโอนสิทธิ์พร้อมข้อมูลผู้วิ่ง
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, participant]
+              properties:
+                token: { type: string, description: 'token จากอีเมลเชิญ' }
+                participant: { $ref: '#/components/schemas/ParticipantInput' }
+      responses:
+        '200':
+          description: โอนสิทธิ์สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transfer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /me/registrations/{registrationId}/change-race:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    post:
+      tags: [My Registrations]
+      operationId: changeRace
+      summary: เปลี่ยนระยะ (จ่ายส่วนต่างหรือรับเครดิตคืนตามนโยบาย)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_race_id]
+              properties:
+                target_race_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: เปลี่ยนสำเร็จ หรือได้ order สำหรับชำระส่วนต่าง
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  registration: { $ref: '#/components/schemas/Registration' }
+                  payment_order: { $ref: '#/components/schemas/Order' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/SoldOut' }
+  /me/registrations/{registrationId}/refund-request:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    post:
+      tags: [My Registrations]
+      operationId: requestRefund
+      summary: ขอคืนเงิน (ตามนโยบายของงาน)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        '201':
+          description: สร้างคำขอคืนเงินแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /me/results:
+    get:
+      tags: [Me]
+      operationId: listMyResults
+      summary: ประวัติผลวิ่งและ PB ของฉัน
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Result' }
+                  personal_bests:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        distance_km: { type: number }
+                        chip_time_ms: { type: integer }
+                        result_id: { type: string, format: uuid }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /me/certificates/{registrationId}.pdf:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    get:
+      tags: [Me]
+      operationId: downloadMyCertificate
+      summary: ดาวน์โหลดใบประกาศ (e-Certificate)
+      responses:
+        '200':
+          description: ไฟล์ PDF
+          content:
+            application/pdf:
+              schema: { type: string, contentMediaType: application/pdf }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /me/virtual-submissions:
+    post:
+      tags: [My Registrations]
+      operationId: submitVirtualRun
+      summary: ส่งผล Virtual Run (อัปโหลดภาพหรือ activity จาก Strava/Garmin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [registration_id, source]
+              properties:
+                registration_id: { type: string, format: uuid }
+                source: { type: string, enum: [upload, strava, garmin] }
+                activity_id: { type: string }
+                distance_m: { type: integer }
+                elapsed_ms: { type: integer }
+                activity_date: { type: string, format: date }
+                proof_upload_id: { type: string }
+      responses:
+        '201':
+          description: รับผลแล้ว รอตรวจสอบ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Result' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ───────────────────────── Public ─────────────────────────
+  /events:
+    get:
+      tags: [Public Events]
+      operationId: searchEvents
+      summary: ค้นหางานวิ่ง
+      security: []
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: province
+          in: query
+          schema: { type: string }
+        - name: month
+          in: query
+          description: รูปแบบ YYYY-MM
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+        - name: distance
+          in: query
+          schema: { type: string, enum: ['5k', '10k', half, full, ultra] }
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/EventType' }
+        - name: price_max
+          in: query
+          description: ราคาสูงสุด (สตางค์)
+          schema: { type: integer, minimum: 0 }
+        - name: registration_open
+          in: query
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [date, popular, closing_soon, newest], default: date }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventSummaryPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /events/{slug}:
+    parameters:
+      - $ref: '#/components/parameters/EventSlug'
+    get:
+      tags: [Public Events]
+      operationId: getEventBySlug
+      summary: รายละเอียดงาน
+      security: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /events/{slug}/races:
+    parameters:
+      - $ref: '#/components/parameters/EventSlug'
+    get:
+      tags: [Public Events]
+      operationId: listEventRaces
+      summary: ระยะทั้งหมดพร้อมราคาปัจจุบันและโควต้าคงเหลือ
+      security: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Race' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /events/{slug}/products:
+    parameters:
+      - $ref: '#/components/parameters/EventSlug'
+    get:
+      tags: [Public Events]
+      operationId: listEventProducts
+      summary: สินค้า/add-on ของงาน (เสื้อ ค่าส่ง ประกัน บริจาค)
+      security: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /events/{slug}/form:
+    parameters:
+      - $ref: '#/components/parameters/EventSlug'
+    get:
+      tags: [Public Events]
+      operationId: getEventForm
+      summary: คำถามเพิ่มเติมในฟอร์มสมัคร
+      security: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FormQuestion' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /events/{slug}/results:
+    parameters:
+      - $ref: '#/components/parameters/EventSlug'
+    get:
+      tags: [Public Results]
+      operationId: listEventResults
+      summary: ผลการแข่งขันของงาน
+      security: []
+      parameters:
+        - name: race_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: q
+          in: query
+          description: ชื่อหรือเลขบิบ
+          schema: { type: string }
+        - name: gender
+          in: query
+          schema: { $ref: '#/components/schemas/Gender' }
+        - name: age_group
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ResultStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultPage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /events/{slug}/photos:
+    parameters:
+      - $ref: '#/components/parameters/EventSlug'
+    get:
+      tags: [Public Results]
+      operationId: searchEventPhotos
+      summary: ค้นหารูปจากเลขบิบ
+      security: []
+      parameters:
+        - name: bib
+          in: query
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Photo' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /results/{resultId}:
+    get:
+      tags: [Public Results]
+      operationId: getResult
+      summary: ผลรายบุคคลพร้อม split และอันดับ
+      security: []
+      parameters:
+        - name: resultId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Result' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /results/{resultId}/certificate:
+    get:
+      tags: [Public Results]
+      operationId: getResultCertificate
+      summary: ข้อมูลใบประกาศ (ลิงก์ PDF / รูปสำหรับแชร์)
+      security: []
+      parameters:
+        - name: resultId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /organizers/{orgSlug}:
+    get:
+      tags: [Public Events]
+      operationId: getOrganizerPublic
+      summary: หน้าผู้จัดงานและรายการงาน
+      security: []
+      parameters:
+        - name: orgSlug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OrganizationPublic'
+                  - type: object
+                    properties:
+                      events:
+                        type: array
+                        items: { $ref: '#/components/schemas/EventSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── Waitlist ─────────────────────────
+  /races/{raceId}/waitlist:
+    parameters:
+      - $ref: '#/components/parameters/RaceId'
+    post:
+      tags: [Waitlist]
+      operationId: joinWaitlist
+      summary: ลงชื่อรอเมื่อระยะเต็ม
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 1, maximum: 10 }
+      responses:
+        '201':
+          description: ลงชื่อแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WaitlistEntry' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /me/waitlist:
+    get:
+      tags: [Waitlist]
+      operationId: listMyWaitlist
+      summary: รายการรอของฉัน
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WaitlistEntry' }
+  /me/waitlist/{waitlistId}:
+    parameters:
+      - $ref: '#/components/parameters/WaitlistId'
+    delete:
+      tags: [Waitlist]
+      operationId: leaveWaitlist
+      summary: ยกเลิกการรอ
+      responses:
+        '204': { description: 'ยกเลิกแล้ว' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /me/waitlist/{waitlistId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/WaitlistId'
+    post:
+      tags: [Waitlist]
+      operationId: acceptWaitlistOffer
+      summary: รับสิทธิ์ที่ได้รับข้อเสนอ (สร้าง checkout session พร้อม hold)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: สร้าง checkout session แล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────── Checkout ─────────────────────────
+  /checkout/queue:
+    post:
+      tags: [Checkout]
+      operationId: enterQueue
+      summary: เข้าคิว waiting room ช่วงเปิดรับสมัคร
+      security:
+        - userAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id]
+              properties:
+                event_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: สถานะคิว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueueTicket' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /checkout/queue/{ticketId}:
+    get:
+      tags: [Checkout]
+      operationId: getQueueStatus
+      summary: ตรวจสถานะคิว (เมื่อถึงคิวจะได้ admission_token)
+      security:
+        - userAuth: []
+        - {}
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: สถานะคิว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueueTicket' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /checkout/sessions:
+    post:
+      tags: [Checkout]
+      operationId: createCheckoutSession
+      summary: จองโควต้าชั่วคราว (hold 15 นาที)
+      description: ล็อกโควต้าของระยะและสต็อกสินค้า ถ้าไม่ชำระภายใน `expires_at` ระบบจะคืนโควต้าอัตโนมัติ
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: X-Queue-Admission
+          in: header
+          description: admission token จาก waiting room (บังคับเมื่อเปิดคิว)
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id, items]
+              properties:
+                event_id: { type: string, format: uuid }
+                items:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/CheckoutItemInput' }
+                access_code:
+                  type: string
+                  description: รหัสโควต้าพิเศษ (VIP / สปอนเซอร์)
+      responses:
+        '201':
+          description: จองสำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/SoldOut' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /checkout/sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [Checkout]
+      operationId: getCheckoutSession
+      summary: ดู checkout session และเวลาที่เหลือ
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Checkout]
+      operationId: cancelCheckoutSession
+      summary: ยกเลิกและคืนโควต้าทันที
+      responses:
+        '204': { description: 'ยกเลิกแล้ว' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /checkout/sessions/{sessionId}/coupon:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Checkout]
+      operationId: applyCoupon
+      summary: ใช้คูปองส่วนลด
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200':
+          description: คำนวณยอดใหม่แล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Checkout]
+      operationId: removeCoupon
+      summary: เอาคูปองออก
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /orders:
+    post:
+      tags: [Checkout]
+      operationId: createOrder
+      summary: สร้างคำสั่งซื้อจาก checkout session พร้อมข้อมูลผู้วิ่ง
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, participants]
+              properties:
+                session_id: { type: string, format: uuid }
+                participants:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/ParticipantInput' }
+                tax_info: { $ref: '#/components/schemas/TaxInfo' }
+                shipping_address: { $ref: '#/components/schemas/Address' }
+                accept_waiver: { type: boolean, description: 'ยอมรับข้อตกลงและสละสิทธิ์เรียกร้อง' }
+      responses:
+        '201':
+          description: สร้างแล้ว สถานะ PENDING_PAYMENT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Checkout]
+      operationId: getOrder
+      summary: ดูคำสั่งซื้อ (ใช้ poll สถานะการชำระเงิน)
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── Payments ─────────────────────────
+  /orders/{orderId}/payments:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Payments]
+      operationId: createPayment
+      summary: เริ่มชำระเงิน (PromptPay QR / บัตร / Mobile Banking)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                method: { $ref: '#/components/schemas/PaymentMethod' }
+                card_token: { type: string, description: 'token จาก gateway SDK (บัตรเครดิต)' }
+                bank_code: { type: string, description: 'สำหรับ mobile_banking เช่น kbank, scb, bbl' }
+                return_url: { type: string, format: uri }
+      responses:
+        '201':
+          description: สร้างรายการชำระเงินแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /webhooks/payments/{gateway}:
+    post:
+      tags: [Payments]
+      operationId: paymentWebhook
+      summary: Webhook จาก payment gateway
+      description: ตรวจลายเซ็นทุกครั้ง และประมวลผลแบบ idempotent ตาม event id ของ gateway
+      security:
+        - webhookSignature: []
+      parameters:
+        - name: gateway
+          in: path
+          required: true
+          schema: { type: string, enum: [omise, 2c2p, gbprimepay, ksher, stripe] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: payload ตามรูปแบบของแต่ละ gateway
+              additionalProperties: true
+      responses:
+        '200': { description: 'รับแล้ว (รวมถึง event ที่เคยประมวลผลแล้ว)' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ───────────────────────── Organizer: Organization ─────────────────────────
+  /org:
+    get:
+      tags: [Org Team]
+      operationId: listMyOrganizations
+      summary: องค์กรที่ฉันเป็นสมาชิก
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Organization' }
+    post:
+      tags: [Org Team]
+      operationId: createOrganization
+      summary: สมัครเป็นผู้จัดงาน (รอแอดมินอนุมัติ KYC)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationInput' }
+      responses:
+        '201':
+          description: สร้างแล้ว สถานะ PENDING_REVIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Org Team]
+      operationId: getOrganization
+      summary: ข้อมูลองค์กร
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Org Team]
+      operationId: updateOrganization
+      summary: แก้ไขข้อมูลองค์กร / บัญชีธนาคาร (Owner)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationInput' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ───────────────────────── Organizer: Events ─────────────────────────
+  /org/{orgId}/events:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Org Events]
+      operationId: orgListEvents
+      summary: รายการงานขององค์กร
+      security:
+        - orgAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/EventStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventSummaryPage' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Org Events]
+      operationId: orgCreateEvent
+      summary: สร้างงานใหม่ (สถานะ DRAFT)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Events]
+      operationId: orgGetEvent
+      summary: รายละเอียดงาน (รวมฟิลด์ภายใน)
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Org Events]
+      operationId: orgUpdateEvent
+      summary: แก้ไขงาน
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Org Events]
+      operationId: orgDeleteEvent
+      summary: ลบงาน (เฉพาะ DRAFT ที่ยังไม่มีผู้สมัคร)
+      security:
+        - orgAuth: []
+      responses:
+        '204': { description: 'ลบแล้ว' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/events/{eventId}/submit:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Events]
+      operationId: orgSubmitEvent
+      summary: ส่งงานให้แอดมินตรวจก่อนเผยแพร่
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: สถานะ PENDING_REVIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/publish:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Events]
+      operationId: orgPublishEvent
+      summary: เผยแพร่งาน (ต้องผ่านการตรวจแล้ว)
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: สถานะ PUBLISHED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/events/{eventId}/close:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Events]
+      operationId: orgCloseRegistration
+      summary: ปิดรับสมัครทันที
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: ปิดแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /org/{orgId}/events/{eventId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Events]
+      operationId: orgCancelEvent
+      summary: ยกเลิกงาน (เลือกคืนเงินทั้งหมดได้)
+      security:
+        - orgAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+                refund_all: { type: boolean, default: true }
+                notify: { type: boolean, default: true }
+      responses:
+        '202': { description: 'รับคำสั่งแล้ว จะประมวลผลคืนเงินแบบ background' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /org/{orgId}/events/{eventId}/dashboard:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Events]
+      operationId: orgEventDashboard
+      summary: สรุปยอดสมัคร รายได้ โควต้าคงเหลือ และยอดเสื้อ
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventDashboard' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /org/{orgId}/events/{eventId}/races:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Events]
+      operationId: orgListRaces
+      summary: รายการระยะ
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Race' }
+    post:
+      tags: [Org Events]
+      operationId: orgCreateRace
+      summary: เพิ่มระยะ
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RaceInput' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Race' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/races/{raceId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/RaceId'
+    patch:
+      tags: [Org Events]
+      operationId: orgUpdateRace
+      summary: แก้ไขระยะ (capacity ห้ามต่ำกว่ายอดที่ขายแล้ว)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RaceInput' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Race' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Org Events]
+      operationId: orgDeleteRace
+      summary: ลบระยะ (ต้องยังไม่มีผู้สมัคร)
+      security:
+        - orgAuth: []
+      responses:
+        '204': { description: 'ลบแล้ว' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/events/{eventId}/races/{raceId}/price-tiers:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/RaceId'
+    get:
+      tags: [Org Events]
+      operationId: orgListPriceTiers
+      summary: ช่วงราคาของระยะ
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PriceTier' }
+    post:
+      tags: [Org Events]
+      operationId: orgCreatePriceTier
+      summary: เพิ่มช่วงราคา (Early bird / ปกติ / หน้างาน)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PriceTierInput' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceTier' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/races/{raceId}/price-tiers/{tierId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/RaceId'
+      - name: tierId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Org Events]
+      operationId: orgUpdatePriceTier
+      summary: แก้ไขช่วงราคา
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PriceTierInput' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceTier' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Org Events]
+      operationId: orgDeletePriceTier
+      summary: ลบช่วงราคา
+      security:
+        - orgAuth: []
+      responses:
+        '204': { description: 'ลบแล้ว' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/events/{eventId}/products:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Events]
+      operationId: orgListProducts
+      summary: สินค้า/add-on ของงาน
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Product' }
+    post:
+      tags: [Org Events]
+      operationId: orgCreateProduct
+      summary: เพิ่มสินค้า (เสื้อ เหรียญ ค่าส่ง ประกัน บริจาค)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/products/{productId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+      - name: productId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Org Events]
+      operationId: orgUpdateProduct
+      summary: แก้ไขสินค้าและสต็อกแต่ละไซซ์
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Org Events]
+      operationId: orgDeleteProduct
+      summary: ลบสินค้า (ถ้ายังไม่มียอดขาย)
+      security:
+        - orgAuth: []
+      responses:
+        '204': { description: 'ลบแล้ว' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/events/{eventId}/form-questions:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Events]
+      operationId: orgListFormQuestions
+      summary: คำถามในฟอร์มสมัคร
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FormQuestion' }
+    post:
+      tags: [Org Events]
+      operationId: orgCreateFormQuestion
+      summary: เพิ่มคำถาม
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormQuestionInput' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FormQuestion' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/form-questions/{questionId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+      - name: questionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Org Events]
+      operationId: orgUpdateFormQuestion
+      summary: แก้ไขคำถาม
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormQuestionInput' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FormQuestion' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Org Events]
+      operationId: orgDeleteFormQuestion
+      summary: ลบคำถาม
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '204': { description: 'ลบแล้ว' }
+  /org/{orgId}/events/{eventId}/coupons:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Events]
+      operationId: orgListCoupons
+      summary: คูปองของงาน
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Coupon' }
+    post:
+      tags: [Org Events]
+      operationId: orgCreateCoupon
+      summary: สร้างคูปอง
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CouponInput' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Coupon' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/coupons/{couponId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+      - name: couponId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Org Events]
+      operationId: orgUpdateCoupon
+      summary: แก้ไข/ปิดใช้งานคูปอง
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CouponInput' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Coupon' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Org Events]
+      operationId: orgDeleteCoupon
+      summary: ลบคูปอง (ถ้ายังไม่ถูกใช้)
+      security:
+        - orgAuth: []
+      responses:
+        '204': { description: 'ลบแล้ว' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────── Organizer: Registrations ─────────────────────────
+  /org/{orgId}/events/{eventId}/registrations:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Registrations]
+      operationId: orgListRegistrations
+      summary: รายชื่อผู้สมัคร (ค้นหา/กรอง)
+      security:
+        - orgAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: ชื่อ อีเมล เบอร์โทร บิบ หรือเลขบัตร
+          schema: { type: string }
+        - name: race_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/RegistrationStatus' }
+        - name: checked_in
+          in: query
+          schema: { type: boolean }
+        - name: shirt_size
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistrationPage' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Org Registrations]
+      operationId: orgCreateManualRegistration
+      summary: เพิ่มผู้สมัครเอง (comp / VIP / ชำระนอกระบบ)
+      security:
+        - orgAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [race_id, participant, payment_type]
+              properties:
+                race_id: { type: string, format: uuid }
+                participant: { $ref: '#/components/schemas/ParticipantInput' }
+                payment_type: { type: string, enum: [comp, offline_cash, offline_transfer] }
+                amount_satang: { type: integer, minimum: 0 }
+                bypass_capacity: { type: boolean, default: false }
+                note: { type: string }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Registration' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/SoldOut' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/registrations/import:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Registrations]
+      operationId: orgImportRegistrations
+      summary: นำเข้าผู้สมัครจาก CSV/Excel (เช่น สมัครแบบกลุ่มองค์กร)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, contentMediaType: text/csv }
+                dry_run: { type: boolean, default: true }
+      responses:
+        '202':
+          description: เริ่ม job นำเข้าแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/registrations/{registrationId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/RegistrationId'
+    get:
+      tags: [Org Registrations]
+      operationId: orgGetRegistration
+      summary: รายละเอียดผู้สมัคร + ประวัติการแก้ไข
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Registration'
+                  - type: object
+                    properties:
+                      history:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditLog' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Org Registrations]
+      operationId: orgUpdateRegistration
+      summary: แก้ข้อมูลผู้สมัครแทน (บันทึก audit log)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                participant: { $ref: '#/components/schemas/ParticipantInput' }
+                race_id: { type: string, format: uuid }
+                shirt_variant_id: { type: string, format: uuid }
+                bib_number: { type: string }
+                status: { $ref: '#/components/schemas/RegistrationStatus' }
+                note: { type: string }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Registration' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/registrations/{registrationId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/RegistrationId'
+    post:
+      tags: [Org Registrations]
+      operationId: orgCancelRegistration
+      summary: ยกเลิกการสมัครและคืนโควต้า
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+                release_to_waitlist: { type: boolean, default: true }
+      responses:
+        '200':
+          description: ยกเลิกแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Registration' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/registrations/{registrationId}/refund:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/RegistrationId'
+    post:
+      tags: [Org Registrations]
+      operationId: orgRefundRegistration
+      summary: คืนเงินผู้สมัคร (เต็มจำนวนหรือบางส่วน)
+      security:
+        - orgAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_satang, reason]
+              properties:
+                amount_satang: { type: integer, minimum: 1 }
+                reason: { type: string }
+                cancel_registration: { type: boolean, default: true }
+      responses:
+        '201':
+          description: สร้างรายการคืนเงินแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/refund-requests:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Registrations]
+      operationId: orgListRefundRequests
+      summary: คำขอคืนเงินจากนักวิ่ง
+      security:
+        - orgAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/RefundStatus' }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Refund' }
+  /org/{orgId}/refunds/{refundId}/decision:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/RefundId'
+    post:
+      tags: [Org Registrations]
+      operationId: orgDecideRefund
+      summary: อนุมัติหรือปฏิเสธคำขอคืนเงิน
+      security:
+        - orgAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approve, reject] }
+                amount_satang: { type: integer, minimum: 1 }
+                note: { type: string }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/events/{eventId}/waitlist:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Registrations]
+      operationId: orgListWaitlist
+      summary: รายชื่อรอของงาน
+      security:
+        - orgAuth: []
+      parameters:
+        - name: race_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WaitlistEntry' }
+  /org/{orgId}/events/{eventId}/waitlist/release:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Registrations]
+      operationId: orgReleaseWaitlist
+      summary: ปล่อยสิทธิ์ให้คิวถัดไป (ส่งข้อเสนอพร้อมเวลาหมดอายุ)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [race_id, slots]
+              properties:
+                race_id: { type: string, format: uuid }
+                slots: { type: integer, minimum: 1 }
+                offer_hours: { type: integer, minimum: 1, default: 48 }
+      responses:
+        '200':
+          description: ส่งข้อเสนอแล้ว
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offered:
+                    type: array
+                    items: { $ref: '#/components/schemas/WaitlistEntry' }
+        '409': { $ref: '#/components/responses/SoldOut' }
+  /org/{orgId}/events/{eventId}/bibs/assign:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Registrations]
+      operationId: orgAssignBibs
+      summary: ออกเลขบิบตามช่วงเลขของแต่ละระยะ
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                race_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                strategy:
+                  type: string
+                  enum: [registration_order, alphabetical, random, by_corral]
+                  default: registration_order
+                only_unassigned: { type: boolean, default: true }
+                dry_run: { type: boolean, default: false }
+      responses:
+        '202':
+          description: เริ่ม job แล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/events/{eventId}/exports:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Registrations]
+      operationId: orgCreateExport
+      summary: สร้างไฟล์ export (ผู้สมัคร, ประกัน, timing, โรงพิมพ์บิบ, สรุปเสื้อ, ใบปะหน้า)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [registrations, insurance, timing, bib_print, shirt_summary, shipping_labels, checkins, finance]
+                format: { type: string, enum: [xlsx, csv, pdf], default: xlsx }
+                race_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                include_sensitive:
+                  type: boolean
+                  default: false
+                  description: รวมเลขบัตร/ข้อมูลสุขภาพ (ต้องมี role ที่อนุญาต และบันทึก audit)
+      responses:
+        '202':
+          description: เริ่ม job แล้ว ดาวน์โหลดเมื่อ status = done
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /org/{orgId}/jobs/{jobId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: jobId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Org Registrations]
+      operationId: orgGetJob
+      summary: สถานะ job (export / import / bib) และลิงก์ดาวน์โหลด
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── Organizer: Results ─────────────────────────
+  /org/{orgId}/events/{eventId}/results/import:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Results]
+      operationId: orgImportResults
+      summary: นำเข้าผลจาก timing (CSV / RaceResult / MYLAPS / ChampionChip)
+      security:
+        - orgAuth: []
+        - timingApiKey: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [race_id, file]
+              properties:
+                race_id: { type: string, format: uuid }
+                source: { type: string, enum: [csv, raceresult, mylaps, championchip], default: csv }
+                file: { type: string, contentMediaType: text/csv }
+                mode: { type: string, enum: [replace, upsert], default: upsert }
+      responses:
+        '202':
+          description: เริ่ม job นำเข้าแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /org/{orgId}/events/{eventId}/results/live:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Results]
+      operationId: orgPushLiveReads
+      summary: ส่งข้อมูลจับเวลาแบบ real-time จากจุด checkpoint (live tracking)
+      security:
+        - timingApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reads]
+              properties:
+                reads:
+                  type: array
+                  items:
+                    type: object
+                    required: [bib, checkpoint, timestamp]
+                    properties:
+                      bib: { type: string }
+                      checkpoint: { type: string }
+                      timestamp: { type: string, format: date-time }
+      responses:
+        '202': { description: 'รับข้อมูลแล้ว' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /org/{orgId}/events/{eventId}/results:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Results]
+      operationId: orgListResults
+      summary: ผลทั้งหมด (รวมที่ยังไม่เผยแพร่)
+      security:
+        - orgAuth: []
+      parameters:
+        - name: race_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultPage' }
+  /org/{orgId}/results/{resultId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: resultId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Org Results]
+      operationId: orgUpdateResult
+      summary: แก้ไขผล / ตัดสิทธิ์ (DQ) / อนุมัติผล virtual run
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { $ref: '#/components/schemas/ResultStatus' }
+                chip_time_ms: { type: integer }
+                gun_time_ms: { type: integer }
+                note: { type: string }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ (คำนวณอันดับใหม่อัตโนมัติ)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Result' }
+  /org/{orgId}/events/{eventId}/results/publish:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Org Results]
+      operationId: orgPublishResults
+      summary: เผยแพร่ผล (ผล unofficial หรือ official) และสร้างใบประกาศ
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                race_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                official: { type: boolean, default: false }
+                generate_certificates: { type: boolean, default: true }
+                notify_runners: { type: boolean, default: true }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '202':
+          description: เริ่มเผยแพร่แล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+  /org/{orgId}/events/{eventId}/certificate-template:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    put:
+      tags: [Org Results]
+      operationId: orgSetCertificateTemplate
+      summary: ตั้งค่า template ใบประกาศ (ภาพพื้นหลัง + ตำแหน่งข้อความ)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CertificateTemplate' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificateTemplate' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ───────────────────────── Organizer: Communication ─────────────────────────
+  /org/{orgId}/events/{eventId}/broadcasts:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Communication]
+      operationId: orgListBroadcasts
+      summary: ประวัติการส่งข้อความ
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Broadcast' }
+    post:
+      tags: [Org Communication]
+      operationId: orgCreateBroadcast
+      summary: ส่งข้อความถึงผู้สมัคร (อีเมล / LINE / SMS) ตามกลุ่ม
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BroadcastInput' }
+      responses:
+        '202':
+          description: เข้าคิวส่งแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Broadcast' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ───────────────────────── Organizer: Team & Staff ─────────────────────────
+  /org/{orgId}/members:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Org Team]
+      operationId: orgListMembers
+      summary: สมาชิกทีมผู้จัด
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/OrgMember' }
+    post:
+      tags: [Org Team]
+      operationId: orgInviteMember
+      summary: เชิญสมาชิก
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                role: { $ref: '#/components/schemas/OrgRole' }
+      responses:
+        '201':
+          description: ส่งคำเชิญแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgMember' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/members/{memberId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: memberId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Org Team]
+      operationId: orgUpdateMember
+      summary: เปลี่ยน role
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/OrgRole' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgMember' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Org Team]
+      operationId: orgRemoveMember
+      summary: นำสมาชิกออก
+      security:
+        - orgAuth: []
+      responses:
+        '204': { description: 'นำออกแล้ว' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /org/{orgId}/events/{eventId}/staff:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Team]
+      operationId: orgListStaff
+      summary: บัญชี staff หน้างาน
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/StaffAccount' }
+    post:
+      tags: [Org Team]
+      operationId: orgCreateStaff
+      summary: สร้างบัญชี staff (ได้ PIN/ลิงก์เข้าใช้ Staff App)
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, checkin_point_ids]
+              properties:
+                name: { type: string }
+                phone: { type: string }
+                checkin_point_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                valid_until: { type: string, format: date-time }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '201':
+          description: สร้างแล้ว (pin แสดงครั้งเดียว)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StaffAccount'
+                  - type: object
+                    properties:
+                      pin: { type: string }
+                      login_url: { type: string, format: uri }
+  /org/{orgId}/events/{eventId}/staff/{staffId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+      - name: staffId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Org Team]
+      operationId: orgRevokeStaff
+      summary: เพิกถอนบัญชี staff
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '204': { description: 'เพิกถอนแล้ว' }
+  /org/{orgId}/events/{eventId}/checkin-points:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Org Team]
+      operationId: orgListCheckinPoints
+      summary: จุดรับของหน้างานและสถิติ real-time
+      security:
+        - orgAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CheckinPoint' }
+    post:
+      tags: [Org Team]
+      operationId: orgCreateCheckinPoint
+      summary: สร้างจุดรับของ
+      security:
+        - orgAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type]
+              properties:
+                name: { type: string }
+                type: { type: string, enum: [race_kit, shirt, medal, bag_drop, start] }
+                race_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckinPoint' }
+
+  # ───────────────────────── Organizer: Finance ─────────────────────────
+  /org/{orgId}/finance/summary:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Org Finance]
+      operationId: orgFinanceSummary
+      summary: สรุปยอดขาย ค่าธรรมเนียม ยอดรอโอน
+      security:
+        - orgAuth: []
+      parameters:
+        - name: event_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinanceSummary' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /org/{orgId}/finance/transactions:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Org Finance]
+      operationId: orgListTransactions
+      summary: รายการธุรกรรม (ขาย / คืนเงิน / ค่าธรรมเนียม)
+      security:
+        - orgAuth: []
+      parameters:
+        - name: event_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionPage' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /org/{orgId}/finance/payouts:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Org Finance]
+      operationId: orgListPayouts
+      summary: ประวัติการโอนเงินให้ผู้จัด
+      security:
+        - orgAuth: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payout' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ───────────────────────── Staff Check-in ─────────────────────────
+  /checkin/session:
+    post:
+      tags: [Checkin]
+      operationId: staffLogin
+      summary: Staff เข้าสู่ระบบด้วย PIN
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id, pin]
+              properties:
+                event_id: { type: string, format: uuid }
+                pin: { type: string }
+                device_id: { type: string }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  staff_token: { type: string }
+                  expires_at: { type: string, format: date-time }
+                  staff: { $ref: '#/components/schemas/StaffAccount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /checkin/manifest:
+    get:
+      tags: [Checkin]
+      operationId: staffDownloadManifest
+      summary: ดาวน์โหลดรายชื่อผู้สมัครแบบย่อสำหรับใช้ offline
+      security:
+        - staffAuth: []
+      parameters:
+        - name: since
+          in: query
+          description: ดึงเฉพาะที่เปลี่ยนแปลงหลังเวลานี้ (delta sync)
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CheckinLookup' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /checkin/scan:
+    post:
+      tags: [Checkin]
+      operationId: staffScan
+      summary: สแกน QR ของนักวิ่ง
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [qr_token, point_id]
+              properties:
+                qr_token: { type: string }
+                point_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: ข้อมูลผู้วิ่ง ไซซ์เสื้อ และสถานะการรับของ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckinLookup' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /checkin/search:
+    get:
+      tags: [Checkin]
+      operationId: staffSearch
+      summary: ค้นหาด้วยบิบ ชื่อ หรือเลขบัตร (กรณีไม่มี QR)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: bib
+          in: query
+          schema: { type: string }
+        - name: name
+          in: query
+          schema: { type: string }
+        - name: id_last4
+          in: query
+          description: เลขบัตร 4 หลักท้าย
+          schema: { type: string, pattern: '^[0-9A-Za-z]{4}$' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CheckinLookup' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /checkin/{registrationId}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    post:
+      tags: [Checkin]
+      operationId: staffConfirmCheckin
+      summary: ยืนยันการรับของ
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [point_id]
+              properties:
+                point_id: { type: string, format: uuid }
+                picked_up_by:
+                  type: string
+                  enum: [self, proxy]
+                proxy_name: { type: string }
+                shirt_variant_id:
+                  type: string
+                  format: uuid
+                  description: กรณีเปลี่ยนไซซ์หน้างาน
+                note: { type: string }
+      responses:
+        '200':
+          description: บันทึกแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Checkin' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /checkin/sync:
+    post:
+      tags: [Checkin]
+      operationId: staffSyncOffline
+      summary: ส่งรายการ check-in ที่บันทึกไว้ตอน offline
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [client_id, registration_id, point_id, checked_in_at]
+                    properties:
+                      client_id: { type: string, description: 'id ฝั่งเครื่องสำหรับกันซ้ำ' }
+                      registration_id: { type: string, format: uuid }
+                      point_id: { type: string, format: uuid }
+                      checked_in_at: { type: string, format: date-time }
+                      shirt_variant_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: ผลการ sync รายการต่อรายการ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        client_id: { type: string }
+                        status: { type: string, enum: [accepted, duplicate, conflict, rejected] }
+                        message: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ───────────────────────── Admin ─────────────────────────
+  /admin/organizers:
+    get:
+      tags: [Admin]
+      operationId: adminListOrganizers
+      summary: รายการผู้จัดงาน
+      security:
+        - adminAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrganizationStatus' }
+        - name: q
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationPage' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/organizers/{orgId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    post:
+      tags: [Admin]
+      operationId: adminApproveOrganizer
+      summary: อนุมัติ KYC ผู้จัดงาน
+      security:
+        - adminAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/organizers/{orgId}/suspend:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    post:
+      tags: [Admin]
+      operationId: adminSuspendOrganizer
+      summary: ระงับผู้จัดงาน (หยุดรับสมัครและ payout)
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+                hold_payouts: { type: boolean, default: true }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+  /admin/organizers/{orgId}/fee:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    put:
+      tags: [Admin]
+      operationId: adminSetOrganizerFee
+      summary: ตั้งค่าธรรมเนียมรายผู้จัด
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeePlan' }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeePlan' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /admin/events:
+    get:
+      tags: [Admin]
+      operationId: adminListEvents
+      summary: งานทั้งหมดในระบบ (รวมที่รอตรวจ)
+      security:
+        - adminAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/EventStatus' }
+        - name: q
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventSummaryPage' }
+  /admin/events/{eventId}/moderate:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Admin]
+      operationId: adminModerateEvent
+      summary: อนุมัติหรือส่งกลับงานที่รอตรวจ
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approve, reject, unpublish] }
+                note: { type: string }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/events/{eventId}/feature:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    put:
+      tags: [Admin]
+      operationId: adminFeatureEvent
+      summary: ตั้ง/ยกเลิกงานแนะนำบนหน้าแรก
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [featured]
+              properties:
+                featured: { type: boolean }
+                rank: { type: integer }
+                until: { type: string, format: date-time }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+  /admin/orders:
+    get:
+      tags: [Admin]
+      operationId: adminListOrders
+      summary: ค้นหาคำสั่งซื้อ (support)
+      security:
+        - adminAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: เลข order อีเมล เบอร์โทร หรือ ref ของ gateway
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+        - name: event_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderPage' }
+  /admin/orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Admin]
+      operationId: adminGetOrder
+      summary: รายละเอียดคำสั่งซื้อพร้อม payment / refund / log
+      security:
+        - adminAuth: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/orders/{orderId}/reconcile:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Admin]
+      operationId: adminReconcileOrder
+      summary: ตรวจสถานะกับ gateway อีกครั้ง (กรณี webhook หาย)
+      security:
+        - adminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สถานะล่าสุด
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+  /admin/refunds:
+    get:
+      tags: [Admin]
+      operationId: adminListRefunds
+      summary: รายการคืนเงินทั้งระบบ
+      security:
+        - adminAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/RefundStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Refund' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+  /admin/refunds/{refundId}/retry:
+    parameters:
+      - $ref: '#/components/parameters/RefundId'
+    post:
+      tags: [Admin]
+      operationId: adminRetryRefund
+      summary: ลองคืนเงินซ้ำ (กรณี gateway ล้มเหลว)
+      security:
+        - adminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/payouts:
+    get:
+      tags: [Admin]
+      operationId: adminListPayouts
+      summary: รายการ payout ทั้งหมด
+      security:
+        - adminAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/PayoutStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payout' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+    post:
+      tags: [Admin]
+      operationId: adminCreatePayout
+      summary: สร้างรอบ settlement / payout ให้ผู้จัด
+      security:
+        - adminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [organization_id, period_end]
+              properties:
+                organization_id: { type: string, format: uuid }
+                event_id: { type: string, format: uuid }
+                period_end: { type: string, format: date }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/payouts/{payoutId}/mark-paid:
+    parameters:
+      - name: payoutId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Admin]
+      operationId: adminMarkPayoutPaid
+      summary: บันทึกว่าโอนเงินแล้ว
+      security:
+        - adminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bank_ref]
+              properties:
+                bank_ref: { type: string }
+                paid_at: { type: string, format: date-time }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: adminListUsers
+      summary: ค้นหาผู้ใช้
+      security:
+        - adminAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/User' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+  /admin/users/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Admin]
+      operationId: adminGetUser
+      summary: ข้อมูลผู้ใช้
+      security:
+        - adminAuth: []
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Admin]
+      operationId: adminUpdateUser
+      summary: ระงับ / ปลดระงับ / แก้ไขผู้ใช้
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [active, suspended] }
+                is_admin: { type: boolean }
+                note: { type: string }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+  /admin/users/{userId}/impersonate:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Admin]
+      operationId: adminImpersonateUser
+      summary: เข้าดูในฐานะผู้ใช้ (อายุสั้น บันทึก audit)
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: token อายุสั้นแบบ read-only
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+  /admin/cms/{type}:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema: { type: string, enum: [banners, articles, faqs, pages] }
+    get:
+      tags: [Admin]
+      operationId: adminListCms
+      summary: รายการเนื้อหา CMS
+      security:
+        - adminAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CmsItem' }
+    post:
+      tags: [Admin]
+      operationId: adminCreateCms
+      summary: สร้างเนื้อหา
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CmsItem' }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CmsItem' }
+  /admin/cms/{type}/{itemId}:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema: { type: string, enum: [banners, articles, faqs, pages] }
+      - name: itemId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Admin]
+      operationId: adminUpdateCms
+      summary: แก้ไขเนื้อหา
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CmsItem' }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CmsItem' }
+    delete:
+      tags: [Admin]
+      operationId: adminDeleteCms
+      summary: ลบเนื้อหา
+      security:
+        - adminAuth: []
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '204': { description: 'ลบแล้ว' }
+  /admin/audit-logs:
+    get:
+      tags: [Admin]
+      operationId: adminListAuditLogs
+      summary: บันทึกการกระทำในระบบ
+      security:
+        - adminAuth: []
+      parameters:
+        - name: actor_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: entity_type
+          in: query
+          schema: { type: string }
+        - name: entity_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditLog' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+  /admin/reports/{report}:
+    parameters:
+      - name: report
+        in: path
+        required: true
+        schema: { type: string, enum: [gmv, orders, conversion, fees, refunds, top_events] }
+    get:
+      tags: [Admin]
+      operationId: adminGetReport
+      summary: รายงานภาพรวมแพลตฟอร์ม
+      security:
+        - adminAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: group_by
+          in: query
+          schema: { type: string, enum: [day, week, month, organizer, event], default: day }
+      responses:
+        '200':
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Report' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+components:
+  securitySchemes:
+    userAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token ของผู้ใช้ (นักวิ่ง)
+    orgAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token ของผู้ใช้ที่เป็นสมาชิกองค์กร ตรวจ role (owner/admin/finance/staff/viewer) ในแต่ละ endpoint
+    staffAuth:
+      type: apiKey
+      in: header
+      name: X-Staff-Token
+      description: Token ของ staff หน้างาน จำกัดเฉพาะงานและจุดรับของที่ได้รับมอบหมาย
+    adminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token ของแอดมินแพลตฟอร์ม (ต้องเปิด 2FA)
+    timingApiKey:
+      type: apiKey
+      in: header
+      name: X-Timing-Key
+      description: API key ของ timing partner ผูกกับงาน
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+      description: ลายเซ็น HMAC จาก payment gateway (ชื่อ header จริงต่างกันตาม gateway)
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: UUID เฉพาะของคำขอ ส่งซ้ำด้วย key เดิมจะได้ผลลัพธ์เดิม (เก็บ 24 ชม.)
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 20 }
+    OrgId:
+      name: orgId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EventSlug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string }
+    RaceId:
+      name: raceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RegistrationId:
+      name: registrationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProfileId:
+      name: profileId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    WaitlistId:
+      name: waitlistId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RefundId:
+      name: refundId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: คำขอไม่ถูกต้อง
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: ไม่ได้เข้าสู่ระบบหรือ token ไม่ถูกต้อง
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: ไม่มีสิทธิ์
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: ไม่พบข้อมูล
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: สถานะขัดแย้ง (เช่น ข้อมูลซ้ำ หรือสถานะไม่อนุญาต)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SoldOut:
+      description: โควต้าหรือสต็อกไม่พอ
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - type: object
+                properties:
+                  type: { const: 'https://api.example.run/problems/sold-out' }
+                  sold_out_items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        race_id: { type: string, format: uuid }
+                        variant_id: { type: string, format: uuid }
+                        remaining: { type: integer }
+                  waitlist_available: { type: boolean }
+    Unprocessable:
+      description: ข้อมูลไม่ผ่านการตรวจสอบ
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: เรียกถี่เกินไป
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: จำนวนวินาทีที่ควรรอ
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    # ── Common ──
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri, default: about:blank }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string, description: 'รหัส error ภายใน เช่น COUPON_EXPIRED' }
+        errors:
+          type: array
+          description: รายละเอียดฟิลด์ที่ผิด
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+    PageMeta:
+      type: object
+      required: [page, per_page, total]
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        total_pages: { type: integer }
+    Money:
+      type: integer
+      minimum: 0
+      description: จำนวนเงินหน่วยสตางค์ (THB)
+    LocalizedText:
+      type: object
+      required: [th]
+      properties:
+        th: { type: string }
+        en: { type: string }
+    Address:
+      type: object
+      properties:
+        name: { type: string }
+        phone: { type: string }
+        line1: { type: string }
+        line2: { type: string }
+        subdistrict: { type: string }
+        district: { type: string }
+        province: { type: string }
+        postal_code: { type: string, pattern: '^[0-9]{5}$' }
+        country: { type: string, default: TH }
+    Job:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        status: { type: string, enum: [queued, running, done, failed] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        result_url: { type: string, format: uri }
+        summary: { type: object, additionalProperties: true }
+        error: { type: string }
+        created_at: { type: string, format: date-time }
+
+    # ── Enums ──
+    Gender:
+      type: string
+      enum: [male, female, other]
+    EventType:
+      type: string
+      enum: [road, trail, virtual, ultra, fun_run]
+    EventStatus:
+      type: string
+      enum: [draft, pending_review, approved, published, registration_closed, completed, cancelled]
+    OrderStatus:
+      type: string
+      enum: [pending_payment, paid, expired, cancelled, partially_refunded, refunded]
+    RegistrationStatus:
+      type: string
+      enum: [pending, confirmed, cancelled, transferred, refunded]
+    PaymentMethod:
+      type: string
+      enum: [promptpay, card, mobile_banking, truemoney, offline]
+    PaymentStatus:
+      type: string
+      enum: [pending, succeeded, failed, expired]
+    RefundStatus:
+      type: string
+      enum: [requested, approved, rejected, processing, succeeded, failed]
+    ResultStatus:
+      type: string
+      enum: [finished, dnf, dns, dq, pending_review]
+    PayoutStatus:
+      type: string
+      enum: [pending, processing, paid, on_hold]
+    OrgRole:
+      type: string
+      enum: [owner, admin, finance, staff, viewer]
+    OrganizationStatus:
+      type: string
+      enum: [pending_review, active, suspended, rejected]
+
+    # ── Auth / User ──
+    AuthTokens:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        token_type: { type: string, const: Bearer }
+        expires_in: { type: integer, description: 'วินาที' }
+        user: { $ref: '#/components/schemas/User' }
+    Consents:
+      type: object
+      description: consent ตาม PDPA แยกตามวัตถุประสงค์
+      properties:
+        marketing_email: { type: boolean }
+        marketing_line: { type: boolean }
+        share_with_sponsors: { type: boolean }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        phone: { type: string }
+        display_name: { type: string }
+        avatar_url: { type: string, format: uri }
+        locale: { type: string, enum: [th, en] }
+        linked_providers:
+          type: array
+          items: { type: string, enum: [line, google, facebook] }
+        consents: { $ref: '#/components/schemas/Consents' }
+        status: { type: string, enum: [active, suspended, pending_deletion] }
+        created_at: { type: string, format: date-time }
+    UserUpdate:
+      type: object
+      properties:
+        display_name: { type: string }
+        phone: { type: string }
+        locale: { type: string, enum: [th, en] }
+        consents: { $ref: '#/components/schemas/Consents' }
+    EmergencyContact:
+      type: object
+      required: [name, phone]
+      properties:
+        name: { type: string }
+        relationship: { type: string }
+        phone: { type: string }
+    RunnerProfileInput:
+      type: object
+      required: [first_name_th, last_name_th, birth_date, gender, nationality, id_type, id_number]
+      properties:
+        first_name_th: { type: string }
+        last_name_th: { type: string }
+        first_name_en: { type: string }
+        last_name_en: { type: string }
+        bib_name: { type: string, maxLength: 12, description: 'ชื่อที่พิมพ์บนบิบ' }
+        birth_date: { type: string, format: date }
+        gender: { $ref: '#/components/schemas/Gender' }
+        nationality: { type: string, description: 'ISO 3166-1 alpha-2' }
+        id_type: { type: string, enum: [thai_id, passport] }
+        id_number: { type: string, writeOnly: true }
+        email: { type: string, format: email }
+        phone: { type: string }
+        blood_type: { type: string, enum: ['A', 'B', 'AB', 'O', 'unknown'] }
+        medical_conditions: { type: string }
+        emergency_contact: { $ref: '#/components/schemas/EmergencyContact' }
+        shirt_size: { type: string }
+        address: { $ref: '#/components/schemas/Address' }
+        is_self: { type: boolean }
+    RunnerProfile:
+      allOf:
+        - $ref: '#/components/schemas/RunnerProfileInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            id_number_masked: { type: string, readOnly: true, examples: ['x-xxxx-xxxxx-12-3'] }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    # ── Organization ──
+    OrganizationPublic:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        logo_url: { type: string, format: uri }
+        description: { type: string }
+        website: { type: string, format: uri }
+        facebook_url: { type: string, format: uri }
+        line_oa: { type: string }
+    OrganizationInput:
+      type: object
+      required: [name, legal_name, tax_id]
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        legal_name: { type: string }
+        entity_type: { type: string, enum: [company, foundation, government, individual] }
+        tax_id: { type: string, pattern: '^[0-9]{13}$' }
+        address: { $ref: '#/components/schemas/Address' }
+        contact_email: { type: string, format: email }
+        contact_phone: { type: string }
+        bank_account:
+          type: object
+          properties:
+            bank_code: { type: string }
+            account_name: { type: string }
+            account_number: { type: string, writeOnly: true }
+        kyc_document_ids:
+          type: array
+          items: { type: string }
+        logo_url: { type: string, format: uri }
+        description: { type: string }
+    Organization:
+      allOf:
+        - $ref: '#/components/schemas/OrganizationInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            status: { $ref: '#/components/schemas/OrganizationStatus' }
+            fee_plan: { $ref: '#/components/schemas/FeePlan' }
+            my_role: { $ref: '#/components/schemas/OrgRole' }
+            created_at: { type: string, format: date-time }
+    OrganizationPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Organization' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+    OrgMember:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/OrgRole' }
+        status: { type: string, enum: [invited, active] }
+        created_at: { type: string, format: date-time }
+    FeePlan:
+      type: object
+      required: [percent_bps, fixed_satang, payer]
+      properties:
+        percent_bps: { type: integer, minimum: 0, description: 'ค่าธรรมเนียมแพลตฟอร์มเป็น basis point (500 = 5%)' }
+        fixed_satang: { $ref: '#/components/schemas/Money' }
+        payer: { type: string, enum: [organizer, runner], description: 'ใครเป็นผู้จ่ายค่าธรรมเนียม' }
+        payment_fee_passthrough: { type: boolean, description: 'ส่งค่าธรรมเนียม gateway ไปยังผู้จัด' }
+
+    # ── Event / Race ──
+    EventInput:
+      type: object
+      required: [name, type, event_date, province]
+      properties:
+        name: { $ref: '#/components/schemas/LocalizedText' }
+        slug: { type: string }
+        type: { $ref: '#/components/schemas/EventType' }
+        event_date: { type: string, format: date }
+        timezone: { type: string, default: Asia/Bangkok }
+        province: { type: string }
+        venue: { type: string }
+        location:
+          type: object
+          properties:
+            lat: { type: number }
+            lng: { type: number }
+        description: { $ref: '#/components/schemas/LocalizedText' }
+        cover_image_url: { type: string, format: uri }
+        gallery:
+          type: array
+          items: { type: string, format: uri }
+        schedule:
+          type: array
+          items:
+            type: object
+            properties:
+              time: { type: string }
+              title: { type: string }
+        rules: { $ref: '#/components/schemas/LocalizedText' }
+        refund_policy: { $ref: '#/components/schemas/LocalizedText' }
+        faq:
+          type: array
+          items:
+            type: object
+            properties:
+              q: { type: string }
+              a: { type: string }
+        registration_opens_at: { type: string, format: date-time }
+        registration_closes_at: { type: string, format: date-time }
+        edit_closes_at: { type: string, format: date-time, description: 'วันสุดท้ายที่นักวิ่งแก้ข้อมูลเองได้' }
+        allow_transfer: { type: boolean, default: false }
+        transfer_fee_satang: { $ref: '#/components/schemas/Money' }
+        allow_race_change: { type: boolean, default: false }
+        race_change_fee_satang: { $ref: '#/components/schemas/Money' }
+        allow_refund_request: { type: boolean, default: false }
+        waitlist_enabled: { type: boolean, default: false }
+        queue_enabled: { type: boolean, default: false, description: 'เปิด waiting room ช่วงเปิดรับสมัคร' }
+        age_reference: { type: string, enum: [race_day, year_end], default: race_day }
+        max_per_order: { type: integer, minimum: 1, default: 10 }
+    Event:
+      allOf:
+        - $ref: '#/components/schemas/EventInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            status: { $ref: '#/components/schemas/EventStatus' }
+            organizer: { $ref: '#/components/schemas/OrganizationPublic' }
+            races:
+              type: array
+              items: { $ref: '#/components/schemas/Race' }
+            featured: { type: boolean }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    EventSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { $ref: '#/components/schemas/LocalizedText' }
+        type: { $ref: '#/components/schemas/EventType' }
+        event_date: { type: string, format: date }
+        province: { type: string }
+        cover_image_url: { type: string, format: uri }
+        distances_km:
+          type: array
+          items: { type: number }
+        min_price_satang: { $ref: '#/components/schemas/Money' }
+        status: { $ref: '#/components/schemas/EventStatus' }
+        registration_closes_at: { type: string, format: date-time }
+        sold_out: { type: boolean }
+    EventSummaryPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/EventSummary' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+    AgeGroup:
+      type: object
+      required: [code, min_age, max_age]
+      properties:
+        code: { type: string, examples: ['M30-39'] }
+        gender: { $ref: '#/components/schemas/Gender' }
+        min_age: { type: integer }
+        max_age: { type: integer }
+    RaceInput:
+      type: object
+      required: [name, distance_km, capacity]
+      properties:
+        name: { $ref: '#/components/schemas/LocalizedText' }
+        distance_km: { type: number, minimum: 0 }
+        start_time: { type: string, format: date-time }
+        cutoff_minutes: { type: integer, minimum: 1 }
+        capacity: { type: integer, minimum: 0 }
+        min_age: { type: integer, minimum: 0 }
+        max_age: { type: integer }
+        gender_restriction: { $ref: '#/components/schemas/Gender' }
+        requires_qualification: { type: boolean, default: false, description: 'ต้องแนบผลวิ่งยืนยันคุณสมบัติ (เช่น Ultra)' }
+        bib_prefix: { type: string }
+        bib_range_start: { type: integer }
+        bib_range_end: { type: integer }
+        age_groups:
+          type: array
+          items: { $ref: '#/components/schemas/AgeGroup' }
+        route_map_url: { type: string, format: uri }
+        gpx_url: { type: string, format: uri }
+        elevation_gain_m: { type: integer }
+        included_product_ids:
+          type: array
+          description: สินค้าที่รวมในค่าสมัคร (เช่น เสื้อ เหรียญ)
+          items: { type: string, format: uuid }
+        sort_order: { type: integer }
+    Race:
+      allOf:
+        - $ref: '#/components/schemas/RaceInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            event_id: { type: string, format: uuid }
+            sold: { type: integer, readOnly: true }
+            held: { type: integer, readOnly: true, description: 'จำนวนที่ถูก hold อยู่ใน checkout' }
+            remaining: { type: integer, readOnly: true }
+            current_price: { $ref: '#/components/schemas/PriceTier' }
+            price_tiers:
+              type: array
+              items: { $ref: '#/components/schemas/PriceTier' }
+    PriceTierInput:
+      type: object
+      required: [name, price_satang, starts_at]
+      properties:
+        name: { type: string, examples: [Early Bird] }
+        price_satang: { $ref: '#/components/schemas/Money' }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        quota: { type: integer, minimum: 1, description: 'จำนวนจำกัดของช่วงราคานี้ (ว่าง = ไม่จำกัด)' }
+        audience: { type: string, enum: [public, access_code], default: public }
+    PriceTier:
+      allOf:
+        - $ref: '#/components/schemas/PriceTierInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            race_id: { type: string, format: uuid }
+            sold: { type: integer, readOnly: true }
+            active: { type: boolean, readOnly: true }
+
+    # ── Product ──
+    VariantInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, examples: [M] }
+        sku: { type: string }
+        chest_inch: { type: number }
+        length_inch: { type: number }
+        stock: { type: integer, minimum: 0, description: 'ว่าง = ไม่จำกัด' }
+        price_delta_satang: { type: integer, description: 'ราคาเพิ่ม/ลดจากราคาสินค้า (สตางค์)' }
+    Variant:
+      allOf:
+        - $ref: '#/components/schemas/VariantInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            sold: { type: integer, readOnly: true }
+            remaining: { type: integer, readOnly: true }
+    ProductInput:
+      type: object
+      required: [name, kind, price_satang]
+      properties:
+        name: { $ref: '#/components/schemas/LocalizedText' }
+        kind: { type: string, enum: [shirt, medal, shipping, insurance, donation, merchandise, photo] }
+        description: { $ref: '#/components/schemas/LocalizedText' }
+        image_url: { type: string, format: uri }
+        size_chart_url: { type: string, format: uri }
+        price_satang: { $ref: '#/components/schemas/Money' }
+        per_participant: { type: boolean, description: 'ผูกกับผู้วิ่งแต่ละคน (เช่น เสื้อ) หรือผูกกับ order (เช่น ค่าส่ง)' }
+        required: { type: boolean, default: false }
+        max_per_order: { type: integer }
+        race_ids:
+          type: array
+          description: จำกัดเฉพาะระยะ (ว่าง = ทุกระยะ)
+          items: { type: string, format: uuid }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/VariantInput' }
+        active: { type: boolean, default: true }
+    Product:
+      allOf:
+        - $ref: '#/components/schemas/ProductInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            event_id: { type: string, format: uuid }
+            variants:
+              type: array
+              items: { $ref: '#/components/schemas/Variant' }
+
+    # ── Form ──
+    FormQuestionInput:
+      type: object
+      required: [label, type]
+      properties:
+        label: { $ref: '#/components/schemas/LocalizedText' }
+        help_text: { $ref: '#/components/schemas/LocalizedText' }
+        type: { type: string, enum: [text, textarea, number, date, select, multi_select, checkbox, file] }
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              value: { type: string }
+              label: { $ref: '#/components/schemas/LocalizedText' }
+        required: { type: boolean, default: false }
+        race_ids:
+          type: array
+          items: { type: string, format: uuid }
+        is_sensitive: { type: boolean, default: false, description: 'ข้อมูลอ่อนไหว (สุขภาพ) จำกัดผู้ที่เห็นได้' }
+        sort_order: { type: integer }
+    FormQuestion:
+      allOf:
+        - $ref: '#/components/schemas/FormQuestionInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+    FormAnswer:
+      type: object
+      required: [question_id]
+      properties:
+        question_id: { type: string, format: uuid }
+        value:
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+            - type: array
+              items: { type: string }
+
+    # ── Coupon ──
+    CouponInput:
+      type: object
+      required: [code, discount_type, discount_value]
+      properties:
+        code: { type: string, pattern: '^[A-Z0-9_-]{3,32}$' }
+        discount_type: { type: string, enum: [percent, fixed] }
+        discount_value: { type: integer, minimum: 1, description: 'percent = 1-100, fixed = สตางค์' }
+        applies_to: { type: string, enum: [registration, order], default: registration }
+        race_ids:
+          type: array
+          items: { type: string, format: uuid }
+        max_uses: { type: integer, minimum: 1 }
+        max_uses_per_user: { type: integer, minimum: 1 }
+        min_participants: { type: integer, minimum: 1, description: 'ใช้สำหรับส่วนลดกลุ่ม' }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        active: { type: boolean, default: true }
+    Coupon:
+      allOf:
+        - $ref: '#/components/schemas/CouponInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            used_count: { type: integer, readOnly: true }
+
+    # ── Checkout / Order ──
+    CheckoutItemInput:
+      type: object
+      required: [kind, quantity]
+      properties:
+        kind: { type: string, enum: [race, product] }
+        race_id: { type: string, format: uuid }
+        variant_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        amount_satang: { type: integer, minimum: 0, description: 'ใช้กับ donation ที่ระบุจำนวนเอง' }
+    CheckoutSession:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        status: { type: string, enum: [active, converted, expired, cancelled] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        coupon_code: { type: string }
+        subtotal_satang: { $ref: '#/components/schemas/Money' }
+        discount_satang: { $ref: '#/components/schemas/Money' }
+        fee_satang: { $ref: '#/components/schemas/Money' }
+        total_satang: { $ref: '#/components/schemas/Money' }
+        expires_at: { type: string, format: date-time }
+    QueueTicket:
+      type: object
+      properties:
+        ticket_id: { type: string }
+        status: { type: string, enum: [waiting, admitted, expired] }
+        position: { type: integer }
+        estimated_wait_seconds: { type: integer }
+        admission_token: { type: string, description: 'ใช้ใน header X-Queue-Admission' }
+        admission_expires_at: { type: string, format: date-time }
+    ParticipantInput:
+      type: object
+      required: [race_id]
+      description: ผู้วิ่ง 1 คน ใส่ profile_id เพื่อดึงโปรไฟล์ที่บันทึกไว้ หรือกรอก profile ใหม่
+      properties:
+        race_id: { type: string, format: uuid }
+        profile_id: { type: string, format: uuid }
+        profile: { $ref: '#/components/schemas/RunnerProfileInput' }
+        save_profile: { type: boolean, default: true }
+        shirt_variant_id: { type: string, format: uuid }
+        addon_items:
+          type: array
+          items: { $ref: '#/components/schemas/CheckoutItemInput' }
+        answers:
+          type: array
+          items: { $ref: '#/components/schemas/FormAnswer' }
+        team_name: { type: string }
+        qualification_upload_id: { type: string }
+    TaxInfo:
+      type: object
+      required: [name, tax_id, address]
+      properties:
+        name: { type: string }
+        tax_id: { type: string, pattern: '^[0-9]{13}$' }
+        branch: { type: string, default: '00000' }
+        address: { type: string }
+        email: { type: string, format: email }
+    OrderItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [race, product, donation, fee] }
+        description: { type: string }
+        race_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        variant_id: { type: string, format: uuid }
+        price_tier_id: { type: string, format: uuid }
+        registration_id: { type: string, format: uuid }
+        quantity: { type: integer }
+        unit_price_satang: { $ref: '#/components/schemas/Money' }
+        discount_satang: { $ref: '#/components/schemas/Money' }
+        total_satang: { $ref: '#/components/schemas/Money' }
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, examples: [RN-2026-000123] }
+        event_id: { type: string, format: uuid }
+        buyer_user_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        registrations:
+          type: array
+          items: { $ref: '#/components/schemas/Registration' }
+        coupon_code: { type: string }
+        subtotal_satang: { $ref: '#/components/schemas/Money' }
+        discount_satang: { $ref: '#/components/schemas/Money' }
+        fee_satang: { $ref: '#/components/schemas/Money' }
+        total_satang: { $ref: '#/components/schemas/Money' }
+        refunded_satang: { $ref: '#/components/schemas/Money' }
+        currency: { type: string, const: THB }
+        payments:
+          type: array
+          items: { $ref: '#/components/schemas/Payment' }
+        refunds:
+          type: array
+          items: { $ref: '#/components/schemas/Refund' }
+        tax_info: { $ref: '#/components/schemas/TaxInfo' }
+        shipping_address: { $ref: '#/components/schemas/Address' }
+        expires_at: { type: string, format: date-time }
+        paid_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    OrderPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Order' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        gateway: { type: string, enum: [omise, 2c2p, gbprimepay, ksher, stripe, offline] }
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        amount_satang: { $ref: '#/components/schemas/Money' }
+        gateway_ref: { type: string }
+        promptpay_qr:
+          type: object
+          description: มีเมื่อ method = promptpay
+          properties:
+            qr_image_url: { type: string, format: uri }
+            qr_payload: { type: string }
+        authorize_uri: { type: string, format: uri, description: 'URL สำหรับ redirect (3DS / mobile banking)' }
+        failure_code: { type: string }
+        failure_message: { type: string }
+        expires_at: { type: string, format: date-time }
+        paid_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    Refund:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        registration_id: { type: string, format: uuid }
+        payment_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        amount_satang: { $ref: '#/components/schemas/Money' }
+        reason: { type: string }
+        requested_by: { type: string, enum: [runner, organizer, admin, system] }
+        decided_by: { type: string, format: uuid }
+        gateway_ref: { type: string }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+
+    # ── Registration ──
+    Registration:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        event_name: { type: string }
+        race_id: { type: string, format: uuid }
+        race_name: { type: string }
+        status: { $ref: '#/components/schemas/RegistrationStatus' }
+        participant:
+          allOf:
+            - $ref: '#/components/schemas/RunnerProfileInput'
+          description: snapshot ข้อมูลผู้วิ่ง ณ วันที่สมัคร
+        age_on_race_day: { type: integer }
+        age_group: { type: string }
+        shirt_variant_id: { type: string, format: uuid }
+        shirt_size: { type: string }
+        addons:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        answers:
+          type: array
+          items: { $ref: '#/components/schemas/FormAnswer' }
+        bib_number: { type: string }
+        qr_token: { type: string, description: 'ใช้แสดง QR สำหรับรับของหน้างาน' }
+        team_name: { type: string }
+        checkins:
+          type: array
+          items: { $ref: '#/components/schemas/Checkin' }
+        result_id: { type: string, format: uuid }
+        can_transfer: { type: boolean }
+        can_change_race: { type: boolean }
+        can_request_refund: { type: boolean }
+        created_at: { type: string, format: date-time }
+    RegistrationPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Registration' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+    Transfer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        registration_id: { type: string, format: uuid }
+        from_user_id: { type: string, format: uuid }
+        recipient_email: { type: string, format: email }
+        status: { type: string, enum: [pending_fee, pending_acceptance, completed, cancelled, expired] }
+        fee_satang: { $ref: '#/components/schemas/Money' }
+        fee_order_id: { type: string, format: uuid }
+        expires_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+    WaitlistEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        race_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        quantity: { type: integer }
+        position: { type: integer }
+        status: { type: string, enum: [waiting, offered, accepted, expired, cancelled] }
+        offer_expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    # ── Check-in ──
+    CheckinPoint:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string, enum: [race_kit, shirt, medal, bag_drop, start] }
+        race_ids:
+          type: array
+          items: { type: string, format: uuid }
+        checked_in_count: { type: integer, readOnly: true }
+        expected_count: { type: integer, readOnly: true }
+    StaffAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        name: { type: string }
+        phone: { type: string }
+        checkin_point_ids:
+          type: array
+          items: { type: string, format: uuid }
+        valid_until: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        revoked: { type: boolean }
+    Checkin:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        registration_id: { type: string, format: uuid }
+        point_id: { type: string, format: uuid }
+        staff_id: { type: string, format: uuid }
+        picked_up_by: { type: string, enum: [self, proxy] }
+        proxy_name: { type: string }
+        shirt_size_given: { type: string }
+        source: { type: string, enum: [online, offline_sync] }
+        checked_in_at: { type: string, format: date-time }
+    CheckinLookup:
+      type: object
+      description: ข้อมูลเท่าที่ staff จำเป็นต้องเห็น (ไม่รวมเลขบัตรเต็ม/ข้อมูลสุขภาพ)
+      properties:
+        registration_id: { type: string, format: uuid }
+        bib_number: { type: string }
+        name: { type: string }
+        race_name: { type: string }
+        shirt_size: { type: string }
+        addons:
+          type: array
+          items: { type: string }
+        id_last4: { type: string }
+        status: { $ref: '#/components/schemas/RegistrationStatus' }
+        already_checked_in: { type: boolean }
+        previous_checkin: { $ref: '#/components/schemas/Checkin' }
+        warnings:
+          type: array
+          items: { type: string, examples: [registration_cancelled, wrong_point] }
+
+    # ── Result ──
+    Split:
+      type: object
+      properties:
+        checkpoint: { type: string }
+        distance_km: { type: number }
+        elapsed_ms: { type: integer }
+        pace_sec_per_km: { type: integer }
+        timestamp: { type: string, format: date-time }
+    Result:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        registration_id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        race_id: { type: string, format: uuid }
+        race_name: { type: string }
+        bib_number: { type: string }
+        name: { type: string }
+        gender: { $ref: '#/components/schemas/Gender' }
+        age_group: { type: string }
+        status: { $ref: '#/components/schemas/ResultStatus' }
+        source: { type: string, enum: [chip, manual, virtual] }
+        chip_time_ms: { type: integer }
+        gun_time_ms: { type: integer }
+        pace_sec_per_km: { type: integer }
+        rank_overall: { type: integer }
+        rank_gender: { type: integer }
+        rank_age_group: { type: integer }
+        splits:
+          type: array
+          items: { $ref: '#/components/schemas/Split' }
+        official: { type: boolean }
+        published: { type: boolean }
+        certificate: { $ref: '#/components/schemas/Certificate' }
+    ResultPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Result' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+    Certificate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        result_id: { type: string, format: uuid }
+        pdf_url: { type: string, format: uri }
+        image_url: { type: string, format: uri, description: 'รูปสำหรับแชร์โซเชียล' }
+        share_url: { type: string, format: uri }
+        generated_at: { type: string, format: date-time }
+    CertificateTemplate:
+      type: object
+      required: [background_url, fields]
+      properties:
+        background_url: { type: string, format: uri }
+        page_size: { type: string, enum: [A4_landscape, A4_portrait, square_1080], default: A4_landscape }
+        fields:
+          type: array
+          items:
+            type: object
+            required: [key, x, y]
+            properties:
+              key: { type: string, enum: [name, bib, race, chip_time, gun_time, pace, rank_overall, rank_gender, rank_age_group, event_date] }
+              x: { type: number }
+              y: { type: number }
+              font_size: { type: number }
+              color: { type: string }
+              align: { type: string, enum: [left, center, right] }
+    Photo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        thumbnail_url: { type: string, format: uri }
+        full_url: { type: string, format: uri }
+        photographer: { type: string }
+        price_satang: { $ref: '#/components/schemas/Money' }
+        taken_at: { type: string, format: date-time }
+
+    # ── Communication ──
+    BroadcastInput:
+      type: object
+      required: [channels, subject, body, audience]
+      properties:
+        channels:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [email, line, sms] }
+        subject: { type: string }
+        body: { type: string, description: 'รองรับตัวแปร เช่น {{first_name}}, {{bib}}' }
+        audience:
+          type: object
+          properties:
+            race_ids:
+              type: array
+              items: { type: string, format: uuid }
+            statuses:
+              type: array
+              items: { $ref: '#/components/schemas/RegistrationStatus' }
+            checked_in: { type: boolean }
+        scheduled_at: { type: string, format: date-time }
+    Broadcast:
+      allOf:
+        - $ref: '#/components/schemas/BroadcastInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [scheduled, sending, sent, failed] }
+            recipient_count: { type: integer }
+            delivered_count: { type: integer }
+            created_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+
+    # ── Finance ──
+    EventDashboard:
+      type: object
+      properties:
+        registrations_total: { type: integer }
+        registrations_today: { type: integer }
+        gross_satang: { $ref: '#/components/schemas/Money' }
+        net_satang: { $ref: '#/components/schemas/Money' }
+        refunded_satang: { $ref: '#/components/schemas/Money' }
+        by_race:
+          type: array
+          items:
+            type: object
+            properties:
+              race_id: { type: string, format: uuid }
+              name: { type: string }
+              capacity: { type: integer }
+              sold: { type: integer }
+              remaining: { type: integer }
+        shirt_sizes:
+          type: array
+          items:
+            type: object
+            properties:
+              variant_id: { type: string, format: uuid }
+              size: { type: string }
+              sold: { type: integer }
+              stock: { type: integer }
+        daily:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              registrations: { type: integer }
+              gross_satang: { $ref: '#/components/schemas/Money' }
+        checkin_rate: { type: number, minimum: 0, maximum: 1 }
+    FinanceSummary:
+      type: object
+      properties:
+        gross_satang: { $ref: '#/components/schemas/Money' }
+        platform_fee_satang: { $ref: '#/components/schemas/Money' }
+        payment_fee_satang: { $ref: '#/components/schemas/Money' }
+        refunded_satang: { $ref: '#/components/schemas/Money' }
+        net_satang: { $ref: '#/components/schemas/Money' }
+        paid_out_satang: { $ref: '#/components/schemas/Money' }
+        pending_payout_satang: { $ref: '#/components/schemas/Money' }
+        reserve_satang: { $ref: '#/components/schemas/Money', description: 'เงินกันไว้สำหรับคืนเงิน/chargeback' }
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [sale, refund, platform_fee, payment_fee, payout, adjustment, chargeback] }
+        order_id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        amount_satang: { type: integer, description: 'บวก = เงินเข้าผู้จัด, ลบ = เงินออก' }
+        description: { type: string }
+        occurred_at: { type: string, format: date-time }
+    TransactionPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Transaction' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+    Payout:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/PayoutStatus' }
+        period_start: { type: string, format: date }
+        period_end: { type: string, format: date }
+        gross_satang: { $ref: '#/components/schemas/Money' }
+        fees_satang: { $ref: '#/components/schemas/Money' }
+        refunds_satang: { $ref: '#/components/schemas/Money' }
+        withholding_tax_satang: { $ref: '#/components/schemas/Money' }
+        amount_satang: { $ref: '#/components/schemas/Money' }
+        bank_ref: { type: string }
+        statement_url: { type: string, format: uri }
+        paid_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    # ── Admin ──
+    CmsItem:
+      type: object
+      required: [title]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        slug: { type: string }
+        title: { $ref: '#/components/schemas/LocalizedText' }
+        body: { $ref: '#/components/schemas/LocalizedText' }
+        image_url: { type: string, format: uri }
+        link_url: { type: string, format: uri }
+        position: { type: integer }
+        published: { type: boolean }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actor_type: { type: string, enum: [user, org_member, staff, admin, system] }
+        actor_id: { type: string, format: uuid }
+        action: { type: string, examples: [registration.update] }
+        entity_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        changes:
+          type: object
+          additionalProperties: true
+          description: ค่าก่อน/หลัง (ปิดบังข้อมูลอ่อนไหว)
+        ip: { type: string }
+        user_agent: { type: string }
+        created_at: { type: string, format: date-time }
+    Report:
+      type: object
+      properties:
+        report: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        totals: { type: object, additionalProperties: true }
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true

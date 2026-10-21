@@ -1,0 +1,1208 @@
+<title>พิมพ์เขียวแพลตฟอร์มงานวิ่ง</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@500;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: เอกสารสเปกยาวหน้าเดียว แถบนำทางติดบน, เนื้อหา 1120px, wireframe วางเป็นกริดของกรอบมือถือ/เบราว์เซอร์ */
+:root{
+  --bg:#F2F4F8; --surface:#FFFFFF; --ink:#131A2C; --muted:#586179; --line:#D3D9E4;
+  --accent:#2347D6; --accent-soft:#E3E9FF; --accent-ink:#FFFFFF;
+  --bib:#FFD23F; --bib-ink:#131A2C;
+  --ok:#1C7F45; --ok-soft:#DDF3E5; --warn:#9A5B00; --warn-soft:#FBEBD0; --bad:#B93025; --bad-soft:#FADCD9;
+  --wf:#ECEFF5; --hatch:#DCE1EA; --code-bg:#0F1524; --code-fg:#E3E8F2;
+  --f-display:"Bai Jamjuree","IBM Plex Sans Thai",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-num:"Barlow Condensed","Bai Jamjuree",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0C1120; --surface:#141B2D; --ink:#E6EAF3; --muted:#97A1B8; --line:#29324A;
+  --accent:#7D95FF; --accent-soft:#1E2850; --accent-ink:#0C1120;
+  --ok:#52C483; --ok-soft:#13301F; --warn:#E7A845; --warn-soft:#352610; --bad:#F2766B; --bad-soft:#3A1715;
+  --wf:#1A2236; --hatch:#232C44; --code-bg:#080C17; --code-fg:#E3E8F2; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C1120; --surface:#141B2D; --ink:#E6EAF3; --muted:#97A1B8; --line:#29324A;
+  --accent:#7D95FF; --accent-soft:#1E2850; --accent-ink:#0C1120;
+  --ok:#52C483; --ok-soft:#13301F; --warn:#E7A845; --warn-soft:#352610; --bad:#F2766B; --bad-soft:#3A1715;
+  --wf:#1A2236; --hatch:#232C44; --code-bg:#080C17; --code-fg:#E3E8F2; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.65}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3,h4{font-family:var(--f-display);text-wrap:balance;line-height:1.25;margin:0}
+h1{font-size:clamp(28px,4.6vw,44px);font-weight:700}
+h2{font-size:clamp(22px,3vw,30px);font-weight:700}
+h3{font-size:19px;font-weight:600}
+h4{font-size:15px;font-weight:600}
+p{margin:0;max-width:72ch}
+a{color:var(--accent)}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* header */
+header.top{background:var(--surface);border-bottom:1px solid var(--line)}
+header.top .wrap{padding-block:36px 28px;display:grid;gap:14px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16.5px}
+.meta{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:12.5px;color:var(--muted);background:var(--bg)}
+.bibmark{font-family:var(--f-num);font-weight:700;background:var(--bib);color:var(--bib-ink);padding:0 8px;border-radius:4px;letter-spacing:.02em}
+
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+nav.toc .wrap{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding-block:8px}
+nav.toc a{flex:none;text-decoration:none;color:var(--muted);font-size:14px;padding:6px 12px;border-radius:8px;white-space:nowrap}
+nav.toc a:hover{background:var(--bg);color:var(--ink)}
+
+main section{padding-block:56px 8px;scroll-margin-top:56px}
+.sec-head{display:grid;gap:8px;margin-bottom:24px}
+.sec-head .num{font-family:var(--f-num);font-weight:700;font-size:15px;color:var(--accent);letter-spacing:.06em}
+.sub{margin-top:36px;margin-bottom:12px;display:grid;gap:6px}
+.sub p{color:var(--muted)}
+.stack{display:grid;gap:16px}
+
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}
+.g5{grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:8px;align-content:start;min-width:0}
+.card p,.card li{color:var(--muted);font-size:14px}
+.card ul{margin:0;padding-left:18px}
+.card .who{font-family:var(--f-display);font-weight:600;font-size:16px}
+
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:12.5px;letter-spacing:.03em;background:var(--bg);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.m{font-family:var(--f-mono);font-size:11.5px;font-weight:500;padding:1px 7px;border-radius:5px;white-space:nowrap}
+.m.GET{background:var(--ok-soft);color:var(--ok)}
+.m.POST{background:var(--accent-soft);color:var(--accent)}
+.m.PATCH,.m.PUT{background:var(--warn-soft);color:var(--warn)}
+.m.DELETE{background:var(--bad-soft);color:var(--bad)}
+td.path{font-family:var(--f-mono);font-size:12.5px;white-space:nowrap}
+.yes{color:var(--ok);font-weight:600}
+.no{color:var(--muted)}
+.part{color:var(--warn);font-weight:600}
+
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;overflow-x:auto}
+.diagram pre.mermaid{margin:0;background:transparent;font-family:var(--f-body)}
+.note{border-left:3px solid var(--accent);background:var(--accent-soft);padding:12px 14px;border-radius:0 8px 8px 0;font-size:14px}
+.note.warn{border-color:var(--warn);background:var(--warn-soft)}
+.tag{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+ul.tight{margin:0;padding-left:20px;display:grid;gap:4px}
+
+/* ---------- wireframes ---------- */
+.wf-grid{display:grid;gap:22px;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));align-items:start}
+.wf-fig{display:grid;gap:8px;min-width:0}
+.wf-fig figcaption{font-size:13px;color:var(--muted)}
+.wf-fig figcaption b{color:var(--ink);font-family:var(--f-display);font-weight:600;font-size:14px;display:block}
+figure{margin:0}
+.phone{width:100%;max-width:300px;margin:0 auto;border:2px solid var(--ink);border-radius:28px;padding:12px 10px 16px;background:var(--surface)}
+.phone .notch{width:72px;height:6px;border-radius:6px;background:var(--line);margin:0 auto 10px}
+.screen{background:var(--bg);border-radius:14px;padding:10px;display:grid;gap:8px;font-size:12px;line-height:1.45;min-height:470px;align-content:start}
+.browser{border:2px solid var(--ink);border-radius:12px;overflow:hidden;background:var(--surface)}
+.browser .bar{display:flex;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--bg)}
+.browser .dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.browser .url{flex:1;min-width:0;margin-left:8px;font-family:var(--f-mono);font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app{display:grid;grid-template-columns:150px 1fr;min-height:340px;font-size:12px;line-height:1.45}
+.side{border-right:1px solid var(--line);padding:12px 8px;display:grid;gap:2px;align-content:start;background:var(--bg)}
+.side span{padding:5px 8px;border-radius:6px;color:var(--muted)}
+.side span.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.side .brand{font-family:var(--f-display);font-weight:700;color:var(--ink);padding:2px 8px 10px}
+.pane{padding:14px;display:grid;gap:10px;align-content:start;min-width:0}
+.wf-wide{grid-column:1/-1}
+@media (max-width:640px){.app{grid-template-columns:1fr}.side{display:none}}
+
+.ph{border-radius:8px;background:repeating-linear-gradient(45deg,var(--wf) 0 8px,var(--hatch) 8px 16px);display:grid;place-items:center;color:var(--muted);font-size:11px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px;display:grid;gap:4px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.row>*{min-width:0}
+.mut{color:var(--muted)}
+.btn{display:block;text-align:center;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:8px;font-weight:600}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.field{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:5px 8px;color:var(--muted)}
+.lbl{font-size:10.5px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chips span{border:1px solid var(--line);border-radius:6px;padding:2px 8px;background:var(--surface)}
+.chips span.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:600}
+.pill{font-size:10.5px;padding:1px 7px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.info{background:var(--accent-soft);color:var(--accent)}
+.steps{display:flex;gap:4px}
+.steps i{flex:1;height:4px;border-radius:4px;background:var(--line)}
+.steps i.on{background:var(--accent)}
+.bigbib{background:var(--bib);color:var(--bib-ink);border-radius:10px;padding:10px;text-align:center;border:2px dashed var(--bib-ink)}
+.bigbib .n{font-family:var(--f-num);font-weight:700;font-size:46px;line-height:1;letter-spacing:.02em}
+.qr{width:120px;height:120px;margin:0 auto;border-radius:6px;background:
+  conic-gradient(from 90deg at 30% 30%,var(--ink) 25%,transparent 0) 0 0/24px 24px,
+  conic-gradient(from 0deg at 70% 60%,var(--ink) 25%,transparent 0) 6px 9px/18px 18px,var(--surface);
+  border:6px solid var(--surface);outline:1px solid var(--line)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px}
+.kpi .v{font-family:var(--f-num);font-weight:700;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+.bars{display:flex;align-items:flex-end;gap:3px;height:90px;padding-top:6px;border-bottom:1px solid var(--line)}
+.bars i{flex:1;background:var(--accent);border-radius:3px 3px 0 0;opacity:.85}
+.bars i.peak{background:var(--bib)}
+.meter{height:6px;background:var(--wf);border-radius:6px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent)}
+.mini{font-size:11.5px;width:100%}
+.mini th,.mini td{padding:5px 6px}
+.mini th{font-size:10.5px}
+.splits{display:grid;gap:4px}
+.splits div{display:grid;grid-template-columns:42px 1fr 48px;gap:6px;align-items:center;font-variant-numeric:tabular-nums}
+.splits b{display:block;height:8px;border-radius:4px;background:var(--accent)}
+.scan{height:150px;border-radius:10px;background:var(--ink);position:relative;display:grid;place-items:center}
+.scan::after{content:"";width:96px;height:96px;border:3px solid var(--bib);border-radius:10px}
+.scan span{position:absolute;bottom:8px;color:var(--bg);font-size:11px}
+
+/* files */
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 14px;border-radius:8px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.codebox{background:var(--code-bg);color:var(--code-fg);border-radius:12px;max-height:560px;overflow:auto;padding:16px;font-family:var(--f-mono);font-size:12.5px;line-height:1.55;white-space:pre;margin:0}
+.filebar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.copy{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:5px 12px;border-radius:8px;cursor:pointer}
+
+footer{padding-block:48px 64px;color:var(--muted);font-size:13px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+html{scroll-behavior:smooth}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">System design · v1.0 · 21 ต.ค. 2026</div>
+    <h1>พิมพ์เขียวแพลตฟอร์มรับสมัครงานวิ่ง</h1>
+    <p class="lede">สเปกครบชุดสำหรับสร้างเว็บแบบ thai.run / RunSignup ครอบคลุมสถาปัตยกรรม ฐานข้อมูล flow ธุรกิจ wireframe หน้าจอ API และ backoffice พร้อมไฟล์ <code>schema.sql</code> และ <code>openapi.yaml</code> สำหรับเริ่มพัฒนา</p>
+    <div class="meta">
+      <span class="chip">ตลาดไทย · PromptPay · LINE · PDPA</span>
+      <span class="chip">PostgreSQL + REST /v1</span>
+      <span class="chip">ตัวอย่างบิบ <span class="bibmark">21-0457</span></span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="สารบัญ">
+  <div class="wrap">
+    <a href="#overview">ภาพรวม</a>
+    <a href="#architecture">สถาปัตยกรรม</a>
+    <a href="#database">ฐานข้อมูล</a>
+    <a href="#flows">Flow ธุรกิจ</a>
+    <a href="#wireframes">Wireframe</a>
+    <a href="#api">API</a>
+    <a href="#backoffice">Backoffice & สิทธิ์</a>
+    <a href="#roadmap">Roadmap</a>
+    <a href="#files">ไฟล์ SQL / OpenAPI</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<!-- ============ 1 OVERVIEW ============ -->
+<section id="overview">
+  <div class="sec-head">
+    <div class="num">01</div>
+    <h2>ภาพรวมและผู้ใช้</h2>
+    <p class="lede">ระบบมีผู้ใช้ 5 กลุ่ม แต่ละกลุ่มใช้หน้าจอและสิทธิ์ต่างกัน จึงแยก client เป็น 3 ตัว: เว็บนักวิ่ง, backoffice, และแอป staff หน้างาน</p>
+  </div>
+  <div class="grid g5">
+    <div class="card"><div class="who">นักวิ่ง</div><p>หางาน สมัครให้ตัวเองและเพื่อน จ่ายเงิน ดูบิบ/QR โอนสิทธิ์ ดูผลและโหลดใบประกาศ</p><span class="tag">เว็บนักวิ่ง</span></div>
+    <div class="card"><div class="who">ผู้จัดงาน</div><p>สร้างงาน ตั้งระยะ ราคา โควต้า ดูยอดสมัคร export ข้อมูล ส่งข่าว รับเงิน</p><span class="tag">Backoffice ผู้จัด</span></div>
+    <div class="card"><div class="who">Staff หน้างาน</div><p>สแกน QR ตอนแจกเสื้อและบิบ ค้นหาผู้สมัคร ทำงานได้แม้เน็ตหลุด</p><span class="tag">Staff PWA</span></div>
+    <div class="card"><div class="who">แอดมินแพลตฟอร์ม</div><p>อนุมัติผู้จัด ตรวจงาน ดูแลการเงิน คืนเงิน payout และ support</p><span class="tag">Backoffice แอดมิน</span></div>
+    <div class="card"><div class="who">Timing partner</div><p>ส่งผลจับเวลาเข้าระบบผ่าน CSV หรือ API key ของงาน</p><span class="tag">API / Upload</span></div>
+  </div>
+
+  <div class="sub"><h3>ขอบเขตฟีเจอร์ทั้งหมด</h3></div>
+  <div class="grid g3">
+    <div class="card"><h4>ค้นหาและดูงาน</h4><ul><li>ค้นตามจังหวัด เดือน ระยะ ประเภท ราคา</li><li>หน้างาน: ระยะ ราคาตามช่วง โควต้าเหลือ แผนที่ cut-off เสื้อ เหรียญ กติกา FAQ</li><li>หน้าโปรไฟล์ผู้จัด</li></ul></div>
+    <div class="card"><h4>สมัครและชำระเงิน</h4><ul><li>หลายคนใน order เดียว</li><li>คำถามที่ผู้จัดกำหนดเอง, ไซซ์เสื้อ, add-on</li><li>คูปอง, ราคากลุ่ม, บริจาค</li><li>PromptPay QR, บัตร, Mobile banking</li></ul></div>
+    <div class="card"><h4>หลังสมัคร</h4><ul><li>บัตรวิ่ง + QR รับของ</li><li>โอนสิทธิ์, เปลี่ยนระยะ, เปลี่ยนไซซ์, ขอคืนเงิน</li><li>ใบเสร็จ/ใบกำกับภาษี, Waitlist</li></ul></div>
+    <div class="card"><h4>วันงาน</h4><ul><li>แจกเสื้อและบิบด้วย QR</li><li>Export ไปโรงพิมพ์บิบ ประกัน timing</li><li>รายงาน check-in แบบ real-time</li></ul></div>
+    <div class="card"><h4>ผลและหลังงาน</h4><ul><li>Import ผลจาก timing, อันดับ Overall/เพศ/รุ่นอายุ</li><li>Split, pace, e-Certificate</li><li>ค้นรูปจากบิบ, Virtual run</li></ul></div>
+    <div class="card"><h4>การเงิน</h4><ul><li>ค่าธรรมเนียมแพลตฟอร์มต่อผู้จัด</li><li>Settlement และ payout</li><li>กระทบยอดกับ gateway รายวัน</li></ul></div>
+  </div>
+</section>
+
+<!-- ============ 2 ARCHITECTURE ============ -->
+<section id="architecture">
+  <div class="sec-head">
+    <div class="num">02</div>
+    <h2>สถาปัตยกรรม</h2>
+    <p class="lede">เริ่มเป็น modular monolith ที่แบ่งโมดูลชัดเจน ค่อยแยกเป็น service เมื่อทีมและ traffic โตขึ้น จุดที่ต้องออกแบบหนักที่สุดคือนาทีที่เปิดรับสมัคร</p>
+  </div>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph C[Clients]
+    W[เว็บนักวิ่ง<br/>Next.js SSR]
+    B[Backoffice<br/>React SPA]
+    S[Staff App<br/>PWA offline]
+  end
+  CDN[CDN + Waiting Room]
+  W --> CDN
+  B --> CDN
+  S --> CDN
+  CDN --> GW[API /v1<br/>Auth, Rate limit, Idempotency]
+  subgraph M[Modules]
+    AU[Auth & User]
+    EV[Event & Inventory]
+    OR[Order & Checkout]
+    PY[Payment]
+    RS[Result & Certificate]
+    NT[Notification]
+    FN[Finance & Payout]
+  end
+  GW --> AU & EV & OR & PY & RS & NT & FN
+  PG[(PostgreSQL)]
+  RD[(Redis)]
+  OB[(Object Storage)]
+  Q[[Job Queue]]
+  M --> PG
+  EV --> RD
+  OR --> RD
+  RS --> OB
+  M --> Q
+  PSP[Payment Gateway<br/>Omise / 2C2P / GB Prime Pay]
+  PY <--> PSP
+  NT --> CH[Email / LINE OA / SMS]
+  TM[Timing partner] --> RS
+  </pre></div>
+
+  <div class="sub"><h3>Stack ที่แนะนำ</h3></div>
+  <div class="tbl"><table>
+    <thead><tr><th>ชั้น</th><th>เลือกใช้</th><th>เหตุผล</th></tr></thead>
+    <tbody>
+      <tr><td>เว็บนักวิ่ง</td><td>Next.js (App Router), Tailwind</td><td>SSR/ISR ให้หน้างานติด Google และ cache ที่ CDN ได้</td></tr>
+      <tr><td>Backoffice</td><td>React + Refine หรือ Ant Design Pro</td><td>ได้ตาราง ฟอร์ม และสิทธิ์สำเร็จรูป ทำ CRUD จำนวนมากได้เร็ว</td></tr>
+      <tr><td>Staff App</td><td>PWA + IndexedDB</td><td>ติดตั้งผ่านลิงก์ได้ทันที สแกนกล้องได้ เก็บคิว offline</td></tr>
+      <tr><td>API</td><td>NestJS (TypeScript) หรือ Go</td><td>โครงสร้างโมดูลชัด ใช้ภาษาเดียวกับ frontend ได้ (NestJS)</td></tr>
+      <tr><td>Database</td><td>PostgreSQL 16</td><td>ต้องการ transaction และ row lock ตอนตัดโควต้า, JSONB เก็บ snapshot</td></tr>
+      <tr><td>Cache / Lock / Queue</td><td>Redis + BullMQ</td><td>นับโควต้าเร็ว, rate limit, งานเบื้องหลัง</td></tr>
+      <tr><td>ไฟล์</td><td>S3 หรือ Cloudflare R2</td><td>รูปงาน ใบประกาศ PDF ไฟล์ export</td></tr>
+      <tr><td>Edge</td><td>Cloudflare (CDN, WAF, Waiting Room)</td><td>รับ traffic วันเปิดรับสมัครและกันบอท</td></tr>
+      <tr><td>Observability</td><td>OpenTelemetry + Grafana/Datadog, Sentry</td><td>ดู latency ช่วง checkout และ webhook ที่ล้มเหลว</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="sub"><h3>Non-functional requirements</h3></div>
+  <div class="grid g2">
+    <div class="card"><h4>วันเปิดรับสมัคร</h4><ul><li>หน้างาน cache ที่ CDN, จำนวนคงเหลือดึงแยกผ่าน API สั้น ๆ</li><li>Waiting room เมื่อ RPS เกินเกณฑ์ ออก queue token</li><li>ตัดโควต้าด้วย <code>UPDATE ... WHERE sold+reserved+n &lt;= capacity</code> ครั้งเดียว ไม่อ่านก่อนเขียน</li><li>เป้าหมาย: 3,000 checkout/นาที, p95 &lt; 400 ms</li></ul></div>
+    <div class="card"><h4>เงินต้องไม่ผิด</h4><ul><li>เก็บเงินเป็นสตางค์ (BIGINT)</li><li>ทุก POST ที่เกี่ยวกับเงินต้องมี <code>Idempotency-Key</code></li><li>Webhook ตรวจลายเซ็นและบันทึก event_id ไม่ให้ซ้ำ</li><li>Reconcile กับ gateway ทุกคืน แจ้งเตือนเมื่อยอดไม่ตรง</li></ul></div>
+    <div class="card"><h4>ความปลอดภัยและ PDPA</h4><ul><li>เข้ารหัสเลขบัตรประชาชน/พาสปอร์ต (AES-GCM) เก็บ hash แยกไว้ตรวจซ้ำ</li><li>ข้อมูลสุขภาพเห็นได้เฉพาะ role ที่จำเป็น</li><li>Consent แยกวัตถุประสงค์, ขอลบข้อมูลได้, audit log ทุกการเปิดดูข้อมูลส่วนตัว</li></ul></div>
+    <div class="card"><h4>งานเบื้องหลัง (Jobs)</h4><ul><li>ปล่อยโควต้าที่หมดเวลา ทุก 30 วินาที</li><li>ส่งอีเมล/LINE, ออกใบเสร็จ, สร้าง PDF ใบประกาศ</li><li>Export ไฟล์ใหญ่, คำนวณอันดับ, ปล่อยคิว waitlist</li><li>ทุก job ต้อง retry ได้โดยไม่เกิดผลซ้ำ</li></ul></div>
+  </div>
+</section>
+
+<!-- ============ 3 DATABASE ============ -->
+<section id="database">
+  <div class="sec-head">
+    <div class="num">03</div>
+    <h2>ฐานข้อมูล (ER Diagram)</h2>
+    <p class="lede">แบ่งเป็น 4 โดเมนเพื่อให้อ่านง่าย แสดงเฉพาะคอลัมน์หลัก ส่วน schema เต็มพร้อม constraint และ index อยู่ในไฟล์ <a href="#files">schema.sql</a></p>
+  </div>
+
+  <div class="note">หลัก 3 ข้อ: แยก <b>Order</b> (คนจ่าย) ออกจาก <b>Registration</b> (คนวิ่ง) · Registration เก็บ <b>snapshot</b> ข้อมูลผู้วิ่ง ณ วันสมัคร · เงินเป็น <b>สตางค์</b> ทุกคอลัมน์</div>
+
+  <div class="sub"><h3>3.1 ผู้ใช้และองค์กร</h3></div>
+  <div class="diagram"><pre class="mermaid">
+erDiagram
+  USERS ||--o{ AUTH_IDENTITIES : "login via"
+  USERS ||--o{ RUNNER_PROFILES : "owns"
+  USERS ||--o{ CONSENTS : "gives"
+  USERS ||--o{ ORG_MEMBERS : "joins"
+  ORGANIZATIONS ||--o{ ORG_MEMBERS : "has"
+  ORGANIZATIONS ||--o{ BANK_ACCOUNTS : "paid to"
+  ORGANIZATIONS ||--o{ KYC_DOCUMENTS : "verified by"
+  USERS {
+    uuid id PK
+    string email UK
+    string phone UK
+    string locale
+    bool is_platform_admin
+  }
+  AUTH_IDENTITIES {
+    uuid id PK
+    uuid user_id FK
+    enum provider "line google facebook otp"
+    string provider_uid
+  }
+  RUNNER_PROFILES {
+    uuid id PK
+    uuid user_id FK
+    string first_name_th
+    string first_name_en
+    date birth_date
+    enum gender
+    bytea id_card_enc
+    string id_card_hash
+    string blood_type
+    jsonb emergency_contact
+    string shirt_size
+    bool is_self
+  }
+  ORGANIZATIONS {
+    uuid id PK
+    string slug UK
+    string name
+    string tax_id
+    enum kyc_status
+    int fee_bps
+  }
+  ORG_MEMBERS {
+    uuid org_id FK
+    uuid user_id FK
+    enum role "owner admin finance staff viewer"
+  }
+  </pre></div>
+
+  <div class="sub"><h3>3.2 งานวิ่งและสินค้า</h3></div>
+  <div class="diagram"><pre class="mermaid">
+erDiagram
+  ORGANIZATIONS ||--o{ EVENTS : "hosts"
+  EVENTS ||--|{ RACES : "has"
+  RACES ||--o{ PRICE_TIERS : "priced by"
+  RACES ||--o{ AGE_GROUPS : "ranked by"
+  EVENTS ||--o{ PRODUCTS : "sells"
+  PRODUCTS ||--|{ PRODUCT_VARIANTS : "has"
+  EVENTS ||--o{ FORM_QUESTIONS : "asks"
+  EVENTS ||--o{ COUPONS : "offers"
+  EVENTS ||--o{ CHECKIN_POINTS : "has"
+  EVENTS {
+    uuid id PK
+    uuid org_id FK
+    string slug UK
+    jsonb name "th en"
+    enum type "road trail virtual"
+    enum status
+    date event_date
+    string province
+    timestamptz reg_open_at
+    timestamptz reg_close_at
+    jsonb policy "refund transfer change"
+  }
+  RACES {
+    uuid id PK
+    uuid event_id FK
+    string name "21.1K"
+    numeric distance_km
+    int capacity
+    int sold
+    int reserved
+    int age_min
+    time start_time
+    interval cutoff
+    string bib_prefix
+    int bib_start
+    int bib_end
+  }
+  PRICE_TIERS {
+    uuid id PK
+    uuid race_id FK
+    string name "Early bird"
+    bigint price_satang
+    timestamptz starts_at
+    timestamptz ends_at
+    int quota
+  }
+  PRODUCT_VARIANTS {
+    uuid id PK
+    uuid product_id FK
+    string size "XS-3XL"
+    int stock
+    int reserved
+    bigint price_satang
+  }
+  FORM_QUESTIONS {
+    uuid id PK
+    uuid event_id FK
+    enum kind "text select checkbox file"
+    jsonb label
+    bool required
+  }
+  COUPONS {
+    uuid id PK
+    uuid event_id FK
+    string code UK
+    enum kind "percent fixed"
+    int value
+    int max_uses
+  }
+  </pre></div>
+
+  <div class="sub"><h3>3.3 สั่งซื้อ ชำระเงิน และสิทธิ์</h3></div>
+  <div class="diagram"><pre class="mermaid">
+erDiagram
+  USERS ||--o{ ORDERS : "pays"
+  CHECKOUT_SESSIONS ||--o{ INVENTORY_HOLDS : "holds"
+  CHECKOUT_SESSIONS ||--o| ORDERS : "becomes"
+  ORDERS ||--|{ ORDER_ITEMS : "contains"
+  ORDERS ||--o{ PAYMENTS : "paid by"
+  PAYMENTS ||--o{ REFUNDS : "reversed by"
+  ORDERS ||--|{ REGISTRATIONS : "creates"
+  RACES ||--o{ REGISTRATIONS : "for"
+  ORDERS ||--o| TAX_INVOICES : "billed"
+  COUPONS ||--o{ COUPON_REDEMPTIONS : "used in"
+  REGISTRATIONS ||--o{ TRANSFERS : "moved by"
+  RACES ||--o{ WAITLIST_ENTRIES : "queues"
+  ORGANIZATIONS ||--o{ PAYOUTS : "receives"
+  ORDERS {
+    uuid id PK
+    string code UK "RN-27-000123"
+    uuid buyer_id FK
+    enum status
+    bigint subtotal_satang
+    bigint discount_satang
+    bigint fee_satang
+    bigint total_satang
+    timestamptz expires_at
+  }
+  REGISTRATIONS {
+    uuid id PK
+    uuid order_id FK
+    uuid race_id FK
+    uuid user_id FK
+    jsonb runner_snapshot
+    string id_card_hash
+    string shirt_size
+    jsonb answers
+    string bib_number
+    enum status
+    string qr_token UK
+  }
+  PAYMENTS {
+    uuid id PK
+    uuid order_id FK
+    enum gateway
+    enum method "promptpay card mobile_banking"
+    string gateway_ref UK
+    bigint amount_satang
+    enum status
+  }
+  REFUNDS {
+    uuid id PK
+    uuid payment_id FK
+    uuid registration_id FK
+    bigint amount_satang
+    enum status
+    string reason
+  }
+  INVENTORY_HOLDS {
+    uuid id PK
+    uuid session_id FK
+    uuid race_id FK
+    uuid variant_id FK
+    int qty
+    timestamptz expires_at
+  }
+  </pre></div>
+
+  <div class="sub"><h3>3.4 วันงานและผลการแข่งขัน</h3></div>
+  <div class="diagram"><pre class="mermaid">
+erDiagram
+  REGISTRATIONS ||--o{ CHECKINS : "picked up"
+  CHECKIN_POINTS ||--o{ CHECKINS : "at"
+  STAFF_ACCOUNTS ||--o{ CHECKINS : "by"
+  REGISTRATIONS ||--o| RESULTS : "finishes"
+  RESULTS ||--o{ SPLITS : "has"
+  RESULTS ||--o| CERTIFICATES : "earns"
+  CERTIFICATE_TEMPLATES ||--o{ CERTIFICATES : "renders"
+  PHOTOS ||--o{ PHOTO_BIBS : "tagged"
+  TEAMS ||--o{ TEAM_MEMBERS : "has"
+  REGISTRATIONS ||--o| TEAM_MEMBERS : "in"
+  RESULTS {
+    uuid id PK
+    uuid registration_id FK
+    interval gun_time
+    interval chip_time
+    int rank_overall
+    int rank_gender
+    int rank_age_group
+    enum status "FIN DNF DNS DQ"
+    bool published
+  }
+  SPLITS {
+    uuid result_id FK
+    string checkpoint "5K 10K 15K"
+    interval elapsed
+  }
+  CHECKINS {
+    uuid id PK
+    uuid registration_id FK
+    uuid point_id FK
+    uuid staff_id FK
+    timestamptz scanned_at
+    string device_id
+  }
+  </pre></div>
+
+  <div class="sub"><h3>ตารางทั้งหมดตามโดเมน</h3></div>
+  <div class="tbl"><table>
+    <thead><tr><th>โดเมน</th><th>ตาราง</th></tr></thead>
+    <tbody>
+      <tr><td>Identity</td><td class="mono">users, auth_identities, runner_profiles, consents</td></tr>
+      <tr><td>Organizer</td><td class="mono">organizations, org_members, bank_accounts, kyc_documents, staff_accounts</td></tr>
+      <tr><td>Catalog</td><td class="mono">events, races, price_tiers, age_groups, products, product_variants, form_questions, coupons</td></tr>
+      <tr><td>Commerce</td><td class="mono">checkout_sessions, inventory_holds, orders, order_items, payments, refunds, coupon_redemptions, tax_invoices, webhook_events, idempotency_keys</td></tr>
+      <tr><td>Entitlement</td><td class="mono">registrations, transfers, race_changes, waitlist_entries, teams, team_members</td></tr>
+      <tr><td>Race day</td><td class="mono">checkin_points, checkins, results, splits, certificate_templates, certificates, photos, photo_bibs</td></tr>
+      <tr><td>Finance</td><td class="mono">platform_fees, settlements, payouts</td></tr>
+      <tr><td>Platform</td><td class="mono">notifications, broadcasts, cms_pages, banners, audit_logs</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 4 FLOWS ============ -->
+<section id="flows">
+  <div class="sec-head">
+    <div class="num">04</div>
+    <h2>Flow ธุรกิจ</h2>
+    <p class="lede">ลำดับขั้นของงานหลักทั้งหมด รวมกรณีขอบที่มักทำให้ระบบงานวิ่งพัง เช่น จ่ายเงินหลังหมดเวลา หรือคืนเงิน PromptPay</p>
+  </div>
+
+  <div class="sub"><h3>4.1 สมัครและชำระเงิน</h3><p>จองโควต้า 15 นาทีตอนเริ่ม checkout ตัดโควต้าจริงเมื่อ webhook ยืนยัน</p></div>
+  <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor R as นักวิ่ง
+  participant W as Web
+  participant A as API
+  participant D as PostgreSQL
+  participant P as Payment Gateway
+  participant Q as Job Queue
+  R->>W: เลือกระยะและจำนวนคน
+  W->>A: POST /checkout/sessions
+  A->>D: UPDATE races SET reserved = reserved + n WHERE ยังเหลือพอ
+  alt โควต้าพอ
+    A-->>W: session_id + expires_at 15 นาที
+  else เต็ม
+    A-->>W: 409 SOLD_OUT พร้อมปุ่มเข้า waitlist
+  end
+  R->>W: กรอกผู้วิ่ง ไซซ์เสื้อ คำถาม add-on คูปอง
+  W->>A: POST /orders พร้อม Idempotency-Key
+  A->>D: order = PENDING_PAYMENT
+  W->>A: POST /orders/:id/payments method=promptpay
+  A->>P: สร้าง charge
+  P-->>A: QR payload
+  A-->>W: แสดง QR และเวลานับถอยหลัง
+  R->>P: สแกนจ่ายในแอปธนาคาร
+  P->>A: webhook charge.complete
+  A->>D: บันทึก webhook_events ถ้า event_id ซ้ำให้ตอบ 200 แล้วจบ
+  A->>D: TRANSACTION order PAID, reserved ย้ายเป็น sold, registrations CONFIRMED
+  A->>Q: ส่งอีเมลและ LINE, ออกใบเสร็จ, กำหนดบิบ
+  W->>A: GET /orders/:id ทุก 3 วินาที
+  A-->>W: PAID แล้วพาไปหน้ายืนยัน
+  </pre></div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="stack">
+      <div class="sub" style="margin:0"><h3>4.2 สถานะ Order</h3></div>
+      <div class="diagram"><pre class="mermaid">
+stateDiagram-v2
+  [*] --> PENDING_PAYMENT : สร้าง order
+  PENDING_PAYMENT --> PAID : webhook สำเร็จ
+  PENDING_PAYMENT --> EXPIRED : เกิน 15 นาที
+  PENDING_PAYMENT --> CANCELLED : ผู้ใช้ยกเลิก
+  EXPIRED --> PAID : จ่ายช้าแต่ยังมีที่ว่าง
+  EXPIRED --> REFUNDED : จ่ายช้าและเต็มแล้ว
+  PAID --> PARTIALLY_REFUNDED : คืนบางคน
+  PAID --> REFUNDED : คืนทั้งหมด
+  PARTIALLY_REFUNDED --> REFUNDED
+      </pre></div>
+    </div>
+    <div class="stack">
+      <div class="sub" style="margin:0"><h3>4.3 สถานะ Registration</h3></div>
+      <div class="diagram"><pre class="mermaid">
+stateDiagram-v2
+  [*] --> PENDING
+  PENDING --> CONFIRMED : ชำระแล้ว
+  PENDING --> VOID : order หมดอายุ
+  CONFIRMED --> TRANSFERRED : โอนสิทธิ์
+  CONFIRMED --> CANCELLED : คืนเงิน
+  CONFIRMED --> CHECKED_IN : รับเสื้อและบิบ
+  CONFIRMED --> DNS : ไม่มาวิ่ง
+  CHECKED_IN --> FINISHED : มีเวลาเข้าเส้น
+  CHECKED_IN --> DNF
+  CHECKED_IN --> DNS
+  FINISHED --> DQ : ตัดสิทธิ์
+      </pre></div>
+    </div>
+  </div>
+
+  <div class="sub"><h3>4.4 คืนเงิน</h3><p>ผู้จัดเลือกได้ว่าจะอนุมัติอัตโนมัติตามนโยบาย หรือต้องกดอนุมัติเอง</p></div>
+  <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  actor R as นักวิ่ง
+  participant A as API
+  actor O as ผู้จัดงาน
+  participant P as Payment Gateway
+  R->>A: POST /me/registrations/:id/refund-request พร้อมเหตุผล
+  A->>A: คำนวณยอดคืนจากนโยบายและวันที่ขอ
+  alt อนุมัติอัตโนมัติ
+    A->>P: refund ตามยอด
+  else ต้องให้ผู้จัดอนุมัติ
+    A->>O: แจ้งเตือนใน Backoffice
+    O->>A: POST /org/:orgId/refunds/:id/approve
+    A->>P: refund ตามยอด
+  end
+  alt บัตรเครดิต หรือ gateway รองรับคืน PromptPay
+    P-->>A: webhook refund.succeeded
+  else คืนผ่าน gateway ไม่ได้
+    A->>R: ขอเลขบัญชีรับเงินคืน
+    O->>A: แนบสลิปโอนคืน
+  end
+  A->>A: registration CANCELLED, คืนโควต้าและสต็อกเสื้อ, หักยอด payout ผู้จัด
+  A-->>R: แจ้งผลทางอีเมลและ LINE
+  </pre></div>
+  <div class="tbl" style="margin-top:12px"><table>
+    <thead><tr><th>ช่วงเวลาที่ขอ (ตัวอย่างนโยบาย)</th><th class="num">คืนค่าสมัคร</th><th>โอนสิทธิ์</th><th>เปลี่ยนระยะ</th></tr></thead>
+    <tbody>
+      <tr><td>มากกว่า 60 วันก่อนงาน</td><td class="num">80%</td><td>ฟรี</td><td>ฟรี + จ่ายส่วนต่าง</td></tr>
+      <tr><td>30–60 วันก่อนงาน</td><td class="num">50%</td><td>ค่าธรรมเนียม ฿100</td><td>฿100 + ส่วนต่าง</td></tr>
+      <tr><td>น้อยกว่า 30 วัน</td><td class="num">0%</td><td>ค่าธรรมเนียม ฿200</td><td>ปิด</td></tr>
+      <tr><td>หลังปิดรับสมัคร / พิมพ์บิบแล้ว</td><td class="num">0%</td><td>ปิด</td><td>ปิด</td></tr>
+      <tr><td>ผู้จัดยกเลิกงาน</td><td class="num">100%</td><td>–</td><td>–</td></tr>
+    </tbody>
+  </table></div>
+  <p class="mut" style="margin-top:8px;font-size:13px">ค่าธรรมเนียม gateway และค่า add-on ที่ผลิตแล้ว (เสื้อ เหรียญ) ไม่คืน ทุกค่าเก็บใน <code>events.policy</code> ให้ผู้จัดตั้งเอง</p>
+
+  <div class="sub"><h3>4.5 โอนสิทธิ์ (Transfer)</h3></div>
+  <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  actor A as ผู้โอน
+  participant API as API
+  actor B as ผู้รับโอน
+  A->>API: POST /me/registrations/:id/transfer อีเมลหรือเบอร์ผู้รับ
+  API->>API: ตรวจว่าเปิดให้โอน ยังไม่เลยวันปิดโอน ยังไม่ check-in
+  API->>B: ส่งลิงก์รับสิทธิ์ หมดอายุ 72 ชั่วโมง
+  B->>API: POST /transfers/:token/accept พร้อมโปรไฟล์
+  API->>API: ตรวจอายุและเพศตามเงื่อนไขระยะ ตรวจบัตรประชาชนไม่ซ้ำ
+  opt มีค่าธรรมเนียมโอน
+    B->>API: ชำระค่าธรรมเนียม
+  end
+  API->>API: TRANSACTION registration เดิม TRANSFERRED, สร้าง registration ใหม่ ใช้บิบเดิม
+  API-->>A: แจ้งโอนสำเร็จ
+  API-->>B: ส่งบัตรวิ่งและ QR
+  </pre></div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="stack">
+      <div class="sub" style="margin:0"><h3>4.6 เปลี่ยนระยะ</h3></div>
+      <div class="diagram"><pre class="mermaid">
+flowchart TD
+  A[ขอเปลี่ยนระยะ] --> B{ระยะใหม่ว่าง?}
+  B -- ไม่ --> X[แจ้งเต็ม หรือเข้า waitlist]
+  B -- ว่าง --> C{เทียบราคาที่จ่าย}
+  C -- แพงกว่า --> D[สร้าง order ส่วนต่าง]
+  D --> E[จ่ายแล้วจึงย้าย]
+  C -- เท่ากัน --> F[ย้ายทันที]
+  C -- ถูกกว่า --> G[ย้ายทันที ไม่คืนส่วนต่าง]
+  E --> H[คืนโควต้าเดิม จองใหม่ ออกบิบตามช่วงของระยะใหม่]
+  F --> H
+  G --> H
+      </pre></div>
+    </div>
+    <div class="stack">
+      <div class="sub" style="margin:0"><h3>4.7 Waitlist</h3></div>
+      <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  actor R as นักวิ่ง
+  participant API as API
+  participant J as Job
+  R->>API: POST /races/:id/waitlist
+  API-->>R: คิวที่ 37
+  Note over API: มีคนยกเลิก หรือผู้จัดเพิ่มโควต้า
+  J->>API: ดึงคิวถัดไปตามจำนวนที่ว่าง
+  API->>R: ส่งสิทธิ์ซื้อ 24 ชม. พร้อมจองที่ไว้
+  alt จ่ายทัน
+    R->>API: checkout ด้วย waitlist token
+  else หมดเวลา
+    J->>API: ปล่อยสิทธิ์ให้คิวถัดไป
+  end
+      </pre></div>
+    </div>
+  </div>
+
+  <div class="sub"><h3>4.8 วันงานและผลการแข่งขัน</h3></div>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph P1[ก่อนงาน]
+    A[ปิดรับสมัคร] --> B[ล็อกบิบ + Export]
+    B --> C[โรงพิมพ์บิบ และผูกชิป]
+    B --> D[ส่งรายชื่อให้ประกัน]
+    B --> E[ส่งรายชื่อให้ Timing]
+  end
+  subgraph P2[รับเสื้อและบิบ]
+    F[Staff สแกน QR] --> G{พบ?}
+    G -- พบ --> H[แสดงชื่อ ระยะ ไซซ์ บิบ]
+    H --> I[ยืนยันรับของ]
+    G -- ไม่พบ --> K[ค้นจากบิบ ชื่อ บัตร]
+    I -. เน็ตหลุด .-> L[(คิวในเครื่อง sync ทีหลัง)]
+  end
+  subgraph P3[หลังแข่ง]
+    M[Timing ส่ง CSV หรือ API] --> N[Import และตรวจบิบไม่ตรง]
+    N --> O[คำนวณอันดับ Overall เพศ รุ่นอายุ]
+    O --> Q[ผู้จัดตรวจ และ DQ]
+    Q --> S[Publish ผล]
+    S --> T[สร้าง e-Certificate และแจ้งนักวิ่ง]
+  end
+  P1 --> P2 --> P3
+  </pre></div>
+</section>
+
+<!-- ============ 5 WIREFRAMES ============ -->
+<section id="wireframes">
+  <div class="sec-head">
+    <div class="num">05</div>
+    <h2>Wireframe หน้าจอ</h2>
+    <p class="lede">โครงหน้าจอหลัก 10 หน้า ข้อมูลในภาพเป็นตัวอย่างทั้งหมด (งานสมมติ “Riverside Night Run 2027”)</p>
+  </div>
+
+  <h3 style="margin-bottom:14px">ฝั่งนักวิ่ง (มือถือก่อน)</h3>
+  <div class="wf-grid">
+    <figure class="wf-fig">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="ph" style="height:110px">ภาพปกงาน</div>
+        <div><b style="font-size:14px">Riverside Night Run 2027</b><div class="mut">อา. 14 ก.พ. 2027 · กรุงเทพฯ · Road</div></div>
+        <div class="chips"><span>แผนที่</span><span>Cut-off</span><span>เสื้อ</span><span>FAQ</span></div>
+        <div class="box"><div class="row"><b>21.1 km</b><span>฿1,200</span></div><div class="row mut"><span>Early bird ถึง 30 พ.ย.</span><span class="pill ok">เหลือ 312</span></div><div class="meter"><i style="width:84%"></i></div></div>
+        <div class="box"><div class="row"><b>10 km</b><span>฿900</span></div><div class="row mut"><span>Cut-off 1:45 ชม.</span><span class="pill warn">เหลือ 41</span></div><div class="meter"><i style="width:98%"></i></div></div>
+        <div class="box"><div class="row"><b>5 km</b><span>฿650</span></div><div class="row mut"><span>Fun run</span><span class="pill bad">เต็ม</span></div><span class="btn ghost">เข้า Waitlist</span></div>
+        <span class="btn">สมัครเลย</span>
+      </div></div>
+      <figcaption><b>1 · หน้างาน</b>โควต้าคงเหลือโหลดแยกจาก API เพื่อให้หน้าเว็บ cache ที่ CDN ได้</figcaption>
+    </figure>
+
+    <figure class="wf-fig">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="steps"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        <div class="row"><b>ข้อมูลผู้วิ่ง 1/2</b><span class="pill info">จอง 14:32</span></div>
+        <div class="chips"><span class="on">ตัวฉัน</span><span>แม่</span><span>+ เพิ่มคน</span></div>
+        <div><div class="lbl">ชื่อ-นามสกุล (ไทย)</div><div class="field">สมชาย ใจดี</div></div>
+        <div><div class="lbl">Name (EN, บนบิบ)</div><div class="field">SOMCHAI</div></div>
+        <div class="row"><div style="flex:1"><div class="lbl">วันเกิด</div><div class="field">12/03/1990</div></div><div style="flex:1"><div class="lbl">รุ่นอายุ</div><div class="field">M30-39</div></div></div>
+        <div><div class="lbl">เลขบัตรประชาชน</div><div class="field">1-xxxx-xxxxx-12-3</div></div>
+        <div><div class="lbl">ไซซ์เสื้อ (รอบอก นิ้ว)</div><div class="chips"><span>S 36</span><span class="on">M 38</span><span>L 40</span><span>XL 42</span></div></div>
+        <div><div class="lbl">ผู้ติดต่อฉุกเฉิน</div><div class="field">สมหญิง · 08x-xxx-xxxx</div></div>
+        <div class="box"><div class="row"><span>☐ จัดส่งเสื้อ+เหรียญ</span><span>฿80</span></div><div class="row"><span>☐ บริจาคมูลนิธิ</span><span>฿100</span></div></div>
+        <span class="btn">ถัดไป</span>
+      </div></div>
+      <figcaption><b>2 · กรอกข้อมูลผู้วิ่ง</b>ดึงจากโปรไฟล์ที่บันทึกไว้ สมัครหลายคนได้ แสดงเวลาจองโควต้าที่เหลือ</figcaption>
+    </figure>
+
+    <figure class="wf-fig">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="steps"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
+        <b>ชำระเงิน</b>
+        <div class="box">
+          <div class="row"><span>21.1 km × 1</span><span>฿1,200</span></div>
+          <div class="row"><span>10 km × 1</span><span>฿900</span></div>
+          <div class="row"><span>คูปอง RUN10</span><span style="color:var(--ok)">−฿210</span></div>
+          <div class="row mut"><span>ค่าธรรมเนียม</span><span>฿38</span></div>
+          <div class="row"><b>รวม</b><b>฿1,928</b></div>
+        </div>
+        <div class="chips"><span class="on">PromptPay</span><span>บัตร</span><span>Mobile banking</span></div>
+        <div class="qr"></div>
+        <div style="text-align:center" class="mut">สแกนด้วยแอปธนาคาร · หมดอายุใน 09:41</div>
+        <div class="box mut">☐ ขอใบกำกับภาษีเต็มรูป</div>
+        <span class="btn ghost">ฉันจ่ายแล้ว ตรวจสถานะ</span>
+      </div></div>
+      <figcaption><b>3 · ชำระเงิน</b>Poll สถานะ order จนกว่า webhook จะยืนยัน</figcaption>
+    </figure>
+
+    <figure class="wf-fig">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="row"><b>บัตรวิ่งของฉัน</b><span class="pill ok">ยืนยันแล้ว</span></div>
+        <div class="bigbib"><div class="lbl" style="color:var(--bib-ink)">RIVERSIDE NIGHT RUN · 21.1K</div><div class="n">21-0457</div><div style="font-weight:600">SOMCHAI</div></div>
+        <div class="qr"></div>
+        <div style="text-align:center" class="mut">แสดง QR นี้ที่จุดรับเสื้อ · ไซซ์ M</div>
+        <div class="box"><div class="row"><span>รับของ</span><span>12–13 ก.พ. · ลานกิจกรรม</span></div><div class="row"><span>ปล่อยตัว</span><span>อา. 04:30</span></div></div>
+        <div class="chips"><span>โอนสิทธิ์</span><span>เปลี่ยนระยะ</span><span>เปลี่ยนไซซ์</span><span>ขอคืนเงิน</span><span>ใบเสร็จ</span></div>
+      </div></div>
+      <figcaption><b>4 · บัตรวิ่ง + QR</b>QR เก็บ token สุ่ม ไม่ใช่ id ตรง ๆ ปุ่มจัดการแสดงตามนโยบายของงาน</figcaption>
+    </figure>
+
+    <figure class="wf-fig">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="row"><b>ผลการแข่งขัน</b><span class="pill ok">FIN</span></div>
+        <div class="box" style="text-align:center"><div class="lbl">Chip time · 21.1 km</div><div style="font-family:var(--f-num);font-weight:700;font-size:40px;line-height:1">1:52:08</div><div class="mut">Pace 5:19 /km · Gun 1:53:41</div></div>
+        <div class="kpis"><div class="kpi"><div class="lbl">Overall</div><div class="v">412</div><div class="lbl">/ 2,875</div></div><div class="kpi"><div class="lbl">ชาย</div><div class="v">338</div><div class="lbl">/ 1,902</div></div><div class="kpi"><div class="lbl">M30-39</div><div class="v">97</div><div class="lbl">/ 611</div></div></div>
+        <div class="lbl">Splits</div>
+        <div class="splits">
+          <div><span>5K</span><b style="width:92%"></b><span>26:10</span></div>
+          <div><span>10K</span><b style="width:95%"></b><span>52:44</span></div>
+          <div><span>15K</span><b style="width:98%"></b><span>1:19:50</span></div>
+          <div><span>21.1K</span><b style="width:100%"></b><span>1:52:08</span></div>
+        </div>
+        <span class="btn">โหลด e-Certificate</span>
+        <span class="btn ghost">ดูรูปของฉัน (บิบ 21-0457)</span>
+      </div></div>
+      <figcaption><b>5 · ผลวิ่ง</b>อันดับ 3 แบบ split และลิงก์ใบประกาศกับรูปจากบิบ</figcaption>
+    </figure>
+
+    <figure class="wf-fig">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="row"><b>Staff · จุดรับเสื้อ A</b><span class="pill warn">offline 3</span></div>
+        <div class="scan"><span>เล็ง QR ในกรอบ</span></div>
+        <div class="box" style="border-color:var(--ok)">
+          <div class="row"><b>SOMCHAI ใจดี</b><span class="pill ok">รับได้</span></div>
+          <div class="row"><span>21.1 km · บิบ</span><span class="bibmark">21-0457</span></div>
+          <div class="row"><span>ไซซ์เสื้อ</span><b style="font-size:18px">M</b></div>
+          <div class="mut">ยืนยันตัวตน: บัตร ปชช. ลงท้าย 12-3</div>
+        </div>
+        <span class="btn">ยืนยันรับของ</span>
+        <div class="field">ค้นหาด้วยบิบ / ชื่อ / เบอร์</div>
+        <div class="row mut"><span>วันนี้รับแล้ว</span><span>1,284 / 3,120</span></div>
+      </div></div>
+      <figcaption><b>6 · Staff สแกน QR</b>สแกนซ้ำจะขึ้นสีแดง “รับไปแล้ว เวลา 10:42 โดย Staff B”</figcaption>
+    </figure>
+  </div>
+
+  <h3 style="margin:36px 0 14px">Backoffice</h3>
+  <div class="wf-grid">
+    <figure class="wf-fig wf-wide">
+      <div class="browser"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">organizer.example.run/events/riverside-2027/dashboard</span></div>
+        <div class="app">
+          <div class="side"><span class="brand">Riverside 2027</span><span class="on">Dashboard</span><span>ข้อมูลงาน</span><span>ระยะ & ราคา</span><span>ฟอร์มสมัคร</span><span>สินค้า</span><span>คูปอง</span><span>ผู้สมัคร</span><span>บิบ</span><span>หน้างาน</span><span>ผลการแข่งขัน</span><span>ส่งข่าว</span><span>การเงิน</span><span>ทีมงาน</span></div>
+          <div class="pane">
+            <div class="row"><b style="font-size:15px">Dashboard</b><span class="chips"><span class="on">30 วัน</span><span>ทั้งหมด</span></span></div>
+            <div class="kpis">
+              <div class="kpi"><div class="lbl">ผู้สมัครยืนยัน</div><div class="v">2,875</div><div class="lbl">+164 วันนี้</div></div>
+              <div class="kpi"><div class="lbl">รายได้สุทธิ</div><div class="v">฿2.71M</div><div class="lbl">หลังหักค่าธรรมเนียม</div></div>
+              <div class="kpi"><div class="lbl">รอชำระ</div><div class="v">58</div><div class="lbl">โควต้าถูกจองไว้</div></div>
+              <div class="kpi"><div class="lbl">ขอคืนเงิน</div><div class="v">6</div><div class="lbl">รออนุมัติ</div></div>
+            </div>
+            <div class="grid g2">
+              <div class="box"><div class="lbl">ยอดสมัครรายวัน (ตัวอย่าง)</div>
+                <div class="bars"><i style="height:100%" class="peak"></i><i style="height:46%"></i><i style="height:30%"></i><i style="height:24%"></i><i style="height:20%"></i><i style="height:28%"></i><i style="height:18%"></i><i style="height:15%"></i><i style="height:22%"></i><i style="height:40%"></i><i style="height:19%"></i><i style="height:14%"></i><i style="height:16%"></i><i style="height:12%"></i></div>
+                <div class="row mut"><span>1 พ.ย. เปิดรับสมัคร</span><span>14 พ.ย.</span></div></div>
+              <div class="box"><div class="lbl">โควต้าตามระยะ</div>
+                <div class="row"><span>21.1 km</span><span class="mut">1,688 / 2,000</span></div><div class="meter"><i style="width:84%"></i></div>
+                <div class="row"><span>10 km</span><span class="mut">1,459 / 1,500</span></div><div class="meter"><i style="width:97%"></i></div>
+                <div class="row"><span>5 km</span><span class="mut">1,000 / 1,000</span></div><div class="meter"><i style="width:100%"></i></div>
+                <div class="lbl" style="margin-top:4px">เสื้อ: S 412 · M 1,105 · L 896 · XL 361 · 2XL 101</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption><b>7 · Dashboard ผู้จัดงาน</b>ภาพรวมยอดสมัคร รายได้ โควต้า และยอดเสื้อแต่ละไซซ์สำหรับสั่งผลิต</figcaption>
+    </figure>
+
+    <figure class="wf-fig wf-wide">
+      <div class="browser"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">organizer.example.run/events/riverside-2027/registrations</span></div>
+        <div class="pane">
+          <div class="row" style="flex-wrap:wrap"><b style="font-size:15px">ผู้สมัคร · 2,875</b><span class="chips"><span>+ เพิ่มผู้สมัคร</span><span>Export ▾</span><span>ส่งข่าวถึงกลุ่มนี้</span></span></div>
+          <div class="chips"><span class="field" style="min-width:160px">ค้นหาชื่อ บิบ อีเมล</span><span class="on">ระยะ: ทั้งหมด</span><span>สถานะ: ยืนยัน</span><span>รับของ: ยัง</span><span>ไซซ์</span></div>
+          <div style="overflow-x:auto"><table class="mini">
+            <thead><tr><th>☐</th><th>บิบ</th><th>ชื่อ</th><th>ระยะ</th><th>รุ่น</th><th>เสื้อ</th><th>Order</th><th>สถานะ</th><th>รับของ</th></tr></thead>
+            <tbody>
+              <tr><td>☐</td><td class="mono">21-0457</td><td>สมชาย ใจดี</td><td>21.1K</td><td>M30-39</td><td>M</td><td class="mono">RN-27-000123</td><td><span class="pill ok">ยืนยัน</span></td><td><span class="pill ok">รับแล้ว</span></td></tr>
+              <tr><td>☐</td><td class="mono">10-1123</td><td>สมหญิง ใจดี</td><td>10K</td><td>F50-59</td><td>S</td><td class="mono">RN-27-000123</td><td><span class="pill ok">ยืนยัน</span></td><td><span class="pill warn">ยัง</span></td></tr>
+              <tr><td>☐</td><td class="mono">21-0458</td><td>Anna Müller</td><td>21.1K</td><td>F20-29</td><td>XS</td><td class="mono">RN-27-000131</td><td><span class="pill info">โอนสิทธิ์มา</span></td><td><span class="pill warn">ยัง</span></td></tr>
+              <tr><td>☐</td><td class="mono">–</td><td>วีระ ทองดี</td><td>5K</td><td>M40-49</td><td>XL</td><td class="mono">RN-27-000140</td><td><span class="pill bad">ขอคืนเงิน</span></td><td>–</td></tr>
+            </tbody>
+          </table></div>
+          <div class="row mut"><span>เลือก 0 รายการ · การกระทำ: ออกบิบ · เปลี่ยนสถานะ · ส่งข้อความ</span><span>1–50 จาก 2,875</span></div>
+        </div>
+      </div>
+      <figcaption><b>8 · ตารางผู้สมัคร</b>กรองหลายเงื่อนไข, bulk action, เปิดรายละเอียดเพื่อแก้ไข (บันทึกใน audit log)</figcaption>
+    </figure>
+
+    <figure class="wf-fig">
+      <div class="browser"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">…/races/21k/edit</span></div>
+        <div class="pane">
+          <b style="font-size:15px">ตั้งค่าระยะ 21.1 km</b>
+          <div class="row"><div style="flex:1"><div class="lbl">ระยะ (km)</div><div class="field">21.0975</div></div><div style="flex:1"><div class="lbl">โควต้า</div><div class="field">2,000</div></div></div>
+          <div class="row"><div style="flex:1"><div class="lbl">ปล่อยตัว</div><div class="field">04:30</div></div><div style="flex:1"><div class="lbl">Cut-off</div><div class="field">3:30 ชม.</div></div></div>
+          <div class="row"><div style="flex:1"><div class="lbl">ช่วงบิบ</div><div class="field">21-0001 → 21-2000</div></div><div style="flex:1"><div class="lbl">อายุขั้นต่ำ</div><div class="field">16 ปี</div></div></div>
+          <div class="lbl">ช่วงราคา</div>
+          <table class="mini"><thead><tr><th>ชื่อ</th><th>ราคา</th><th>ถึงวันที่</th><th>โควต้า</th></tr></thead>
+          <tbody><tr><td>Early bird</td><td>฿1,200</td><td>30 พ.ย.</td><td>800</td></tr><tr><td>ปกติ</td><td>฿1,400</td><td>31 ม.ค.</td><td>–</td></tr></tbody></table>
+          <div class="lbl">รุ่นอายุ: ทุก 10 ปี คำนวณจากอายุ ณ วันแข่ง</div>
+          <span class="btn">บันทึก</span>
+        </div>
+      </div>
+      <figcaption><b>9 · ตั้งค่าระยะและราคา</b>ราคาเปลี่ยนตามวันหรือตามโควต้าที่ขายได้</figcaption>
+    </figure>
+
+    <figure class="wf-fig">
+      <div class="browser"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">admin.example.run/payouts</span></div>
+        <div class="pane">
+          <div class="row"><b style="font-size:15px">Payout รอบ 15 พ.ย.</b><span class="pill warn">รออนุมัติ 3</span></div>
+          <table class="mini"><thead><tr><th>ผู้จัด</th><th class="num">ยอดขาย</th><th class="num">ค่าธรรมเนียม</th><th class="num">คืนเงิน</th><th class="num">โอน</th></tr></thead>
+          <tbody>
+            <tr><td>Riverside Sports</td><td class="num">2,840,500</td><td class="num">85,215</td><td class="num">12,000</td><td class="num">2,743,285</td></tr>
+            <tr><td>Doi Trail Club</td><td class="num">612,000</td><td class="num">18,360</td><td class="num">0</td><td class="num">593,640</td></tr>
+            <tr><td>Korat Fun Run</td><td class="num">98,400</td><td class="num">2,952</td><td class="num">1,300</td><td class="num">94,148</td></tr>
+          </tbody></table>
+          <div class="note warn" style="font-size:12px">Reconcile: ยอด Omise ไม่ตรง 1 รายการ (฿900) ตรวจก่อนอนุมัติ</div>
+          <div class="row"><span class="btn ghost" style="flex:1">ดาวน์โหลดไฟล์โอน</span><span class="btn" style="flex:1">อนุมัติ</span></div>
+        </div>
+      </div>
+      <figcaption><b>10 · แอดมิน: Payout</b>สรุปยอดผู้จัดแต่ละราย กันจ่ายเมื่อยอดไม่ตรงกับ gateway</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ 6 API ============ -->
+<section id="api">
+  <div class="sec-head">
+    <div class="num">06</div>
+    <h2>API</h2>
+    <p class="lede">REST ที่ <code>https://api.example.run/v1</code> ตารางนี้สรุปเฉพาะ endpoint หลัก ส่วนสเปกเต็มพร้อม schema อยู่ใน <a href="#files">openapi.yaml</a></p>
+  </div>
+  <div class="grid g2">
+    <div class="card"><h4>ข้อตกลงร่วม</h4><ul>
+      <li>Auth: Bearer JWT (นักวิ่ง/ผู้จัด/แอดมิน), staff token แยกต่องาน</li>
+      <li><code>Idempotency-Key</code> บังคับบน POST ที่เกี่ยวกับเงิน</li>
+      <li>Error แบบ RFC 7807 <code>application/problem+json</code> พร้อม <code>code</code> เช่น <code>SOLD_OUT</code>, <code>HOLD_EXPIRED</code></li>
+      <li>Pagination แบบ cursor: <code>?cursor=&amp;limit=</code></li></ul></div>
+    <div class="card"><h4>Webhook และ rate limit</h4><ul>
+      <li>ตรวจลายเซ็นจาก header ของแต่ละ gateway</li>
+      <li>บันทึก <code>webhook_events(gateway, event_id)</code> unique และตอบ 200 เสมอเมื่อซ้ำ</li>
+      <li>Rate limit ต่อ IP และต่อ user, ตอบ 429 พร้อม <code>Retry-After</code></li>
+      <li>Organizer endpoint ตรวจ role ใน org ทุกครั้ง</li></ul></div>
+  </div>
+  <div id="api-tables" class="stack" style="margin-top:16px"></div>
+</section>
+
+<!-- ============ 7 BACKOFFICE ============ -->
+<section id="backoffice">
+  <div class="sec-head">
+    <div class="num">07</div>
+    <h2>Backoffice และสิทธิ์</h2>
+    <p class="lede">เมนูทั้งหมดของผู้จัดงานและแอดมิน พร้อมตารางสิทธิ์ของแต่ละ role ในองค์กรผู้จัด</p>
+  </div>
+  <div class="grid g2">
+    <div class="card"><h4>เมนูผู้จัดงาน</h4><ul>
+      <li><b>Dashboard</b> ยอดสมัคร รายได้ โควต้า เสื้อ</li>
+      <li><b>ข้อมูลงาน</b> wizard, รูป, แผนที่, กติกา, นโยบายคืนเงิน/โอน, Draft → ส่งตรวจ → Publish</li>
+      <li><b>ระยะ & ราคา</b> โควต้า, ช่วงราคา, รุ่นอายุ, ช่วงบิบ</li>
+      <li><b>ฟอร์มสมัคร</b> form builder, ฟิลด์บังคับ</li>
+      <li><b>สินค้า</b> เสื้อตามไซซ์, เหรียญ, ค่าส่ง, ประกัน, บริจาค</li>
+      <li><b>คูปอง</b> % หรือบาท, จำกัดจำนวน/ระยะ, โควต้า VIP</li>
+      <li><b>ผู้สมัคร</b> ค้นหา แก้ไข เพิ่มเอง ยกเลิก คืนเงิน</li>
+      <li><b>บิบ</b> ออกอัตโนมัติ/เอง, ล็อกก่อนพิมพ์</li>
+      <li><b>Waitlist / โอนสิทธิ์ / เปลี่ยนระยะ</b> คำขอรออนุมัติ</li>
+      <li><b>Export</b> ผู้สมัคร, ประกัน, timing, โรงพิมพ์, ใบปะหน้า</li>
+      <li><b>ส่งข่าว</b> อีเมล/LINE/SMS ตามกลุ่ม</li>
+      <li><b>หน้างาน</b> จุดรับของ, บัญชี staff, real-time</li>
+      <li><b>ผลการแข่งขัน</b> import, แก้, DQ, publish, template ใบประกาศ</li>
+      <li><b>การเงิน</b> ธุรกรรม, payout, ใบกำกับภาษี</li>
+      <li><b>ทีมงาน</b> เชิญสมาชิก กำหนด role</li></ul></div>
+    <div class="card"><h4>เมนูแอดมินแพลตฟอร์ม</h4><ul>
+      <li><b>ผู้จัดงาน</b> KYC, อนุมัติ/ระงับ, ตั้งค่าธรรมเนียม</li>
+      <li><b>งานวิ่ง</b> ตรวจก่อน publish, ตั้งเป็นงานแนะนำ</li>
+      <li><b>Orders & Support</b> ค้น order/ผู้ใช้, impersonate แบบมี audit</li>
+      <li><b>คืนเงิน & Chargeback</b></li>
+      <li><b>Payout & Reconcile</b> รอบโอน, ยอดไม่ตรง</li>
+      <li><b>ผู้ใช้</b> ระงับ, ลบข้อมูลตามคำขอ PDPA</li>
+      <li><b>CMS</b> แบนเนอร์, บทความ, FAQ, policy</li>
+      <li><b>ตั้งค่า</b> ช่องทางชำระเงิน, template อีเมล/LINE</li>
+      <li><b>รายงาน</b> GMV, orders, conversion funnel</li>
+      <li><b>Audit log</b></li></ul></div>
+  </div>
+  <div class="sub"><h3>สิทธิ์ตาม role ในองค์กรผู้จัด</h3><p><span class="yes">✓</span> ทำได้ · <span class="part">◐</span> ทำได้บางส่วน · <span class="no">–</span> ทำไม่ได้</p></div>
+  <div class="tbl" id="perm"></div>
+</section>
+
+<!-- ============ 8 ROADMAP ============ -->
+<section id="roadmap">
+  <div class="sec-head">
+    <div class="num">08</div>
+    <h2>Roadmap</h2>
+    <p class="lede">ระยะเวลาเป็นค่าประมาณคร่าว ๆ สำหรับทีม 2 Backend, 2 Frontend, 1 Designer, 1 QA</p>
+  </div>
+  <div class="grid g3">
+    <div class="card"><div class="row"><h4>MVP</h4><span class="tag">~10–12 สัปดาห์</span></div><ul>
+      <li>สมัครสมาชิก, LINE/Google login, โปรไฟล์</li><li>สร้างงาน ระยะ ราคา เสื้อ</li><li>Checkout + จองโควต้า + PromptPay/บัตร</li><li>บัตรวิ่ง QR, อีเมลยืนยัน</li><li>ตารางผู้สมัคร + Export, Dashboard</li><li>Admin: อนุมัติผู้จัด, ดู order</li></ul></div>
+    <div class="card"><div class="row"><h4>Phase 2</h4><span class="tag">~8 สัปดาห์</span></div><ul>
+      <li>คูปอง, add-on, form builder</li><li>บิบอัตโนมัติ</li><li>Staff check-in PWA</li><li>โอนสิทธิ์, เปลี่ยนระยะ, คืนเงิน</li><li>ใบกำกับภาษี, payout, reconcile</li><li>LINE OA แจ้งเตือน, ส่งข่าว</li></ul></div>
+    <div class="card"><div class="row"><h4>Phase 3</h4><span class="tag">~10 สัปดาห์</span></div><ul>
+      <li>ผลการแข่งขัน + e-Certificate</li><li>Waitlist, สมัครแบบทีม</li><li>Virtual run + Strava</li><li>ค้นรูปจากบิบ/ใบหน้า</li><li>Live tracking</li><li>แอปมือถือ</li></ul></div>
+  </div>
+</section>
+
+<!-- ============ 9 FILES ============ -->
+<section id="files">
+  <div class="sec-head">
+    <div class="num">09</div>
+    <h2>ไฟล์สำหรับเริ่มพัฒนา</h2>
+    <p class="lede">Schema ฐานข้อมูลและสเปก API ฉบับเต็ม คัดลอกไปใช้ได้ทันที</p>
+  </div>
+  <div class="filebar">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-sql" aria-selected="true" data-file="schema.sql">schema.sql</button>
+      <button role="tab" id="tab-yaml" aria-selected="false" data-file="openapi.yaml">openapi.yaml</button>
+    </div>
+    <button class="copy" id="copy-btn">คัดลอก</button>
+  </div>
+  <pre class="codebox" id="codebox" style="margin-top:10px" tabindex="0">กำลังโหลด…</pre>
+</section>
+
+</main>
+<footer><div class="wrap">พิมพ์เขียวแพลตฟอร์มรับสมัครงานวิ่ง · ข้อมูลตัวอย่างทั้งหมดในหน้านี้เป็นข้อมูลสมมติ</div></footer>
+
+<script>
+const API = [
+  ["Auth & โปรไฟล์", [
+    ["POST","/auth/otp/request","ขอ OTP ทางเบอร์/อีเมล"],
+    ["POST","/auth/otp/verify","ยืนยัน OTP รับ token"],
+    ["POST","/auth/oauth/{provider}","Login ด้วย LINE / Google / Facebook"],
+    ["POST","/auth/refresh","ต่ออายุ token"],
+    ["GET","/me","ข้อมูลบัญชี"],
+    ["PATCH","/me","แก้บัญชี, consent"],
+    ["GET","/me/profiles","โปรไฟล์ผู้วิ่งที่บันทึกไว้"],
+    ["POST","/me/profiles","เพิ่มโปรไฟล์ (ตัวเอง/ครอบครัว)"],
+    ["PATCH","/me/profiles/{id}","แก้โปรไฟล์"],
+    ["DELETE","/me/profiles/{id}","ลบโปรไฟล์"],
+    ["POST","/me/data-requests","ขอ export/ลบข้อมูล (PDPA)"]
+  ]],
+  ["สิทธิ์ของฉัน", [
+    ["GET","/me/registrations","งานที่สมัครทั้งหมด"],
+    ["GET","/me/registrations/{id}","บัตรวิ่ง, บิบ, QR"],
+    ["PATCH","/me/registrations/{id}","เปลี่ยนไซซ์/ข้อมูลที่อนุญาต"],
+    ["POST","/me/registrations/{id}/transfer","เริ่มโอนสิทธิ์"],
+    ["POST","/transfers/{token}/accept","ผู้รับยอมรับสิทธิ์"],
+    ["POST","/me/registrations/{id}/change-race","ขอเปลี่ยนระยะ"],
+    ["POST","/me/registrations/{id}/refund-request","ขอคืนเงิน"],
+    ["GET","/me/orders","ประวัติการสั่งซื้อ"],
+    ["GET","/me/orders/{id}/receipt","ใบเสร็จ / ใบกำกับภาษี PDF"],
+    ["GET","/me/results","ผลวิ่งและ PB"],
+    ["GET","/me/certificates/{id}","ดาวน์โหลด e-Certificate"]
+  ]],
+  ["Public", [
+    ["GET","/events","ค้นหางาน ?q=&province=&month=&distance=&type="],
+    ["GET","/events/{slug}","รายละเอียดงาน"],
+    ["GET","/events/{slug}/availability","ราคาปัจจุบันและโควต้าคงเหลือ (cache 5 วิ)"],
+    ["GET","/events/{slug}/results","ผลการแข่งขัน ?race=&q=&gender=&age_group="],
+    ["GET","/results/{id}","ผลรายบุคคล + splits"],
+    ["GET","/events/{slug}/photos","ค้นรูป ?bib="],
+    ["GET","/organizers/{slug}","หน้าผู้จัด"],
+    ["POST","/races/{id}/waitlist","เข้าคิว waitlist"]
+  ]],
+  ["Checkout & ชำระเงิน", [
+    ["POST","/checkout/sessions","จองโควต้า 15 นาที"],
+    ["GET","/checkout/sessions/{id}","ดูสถานะและเวลาที่เหลือ"],
+    ["POST","/checkout/sessions/{id}/coupon","ใส่คูปอง"],
+    ["DELETE","/checkout/sessions/{id}","ยกเลิกและคืนโควต้า"],
+    ["POST","/orders","สร้าง order จาก session"],
+    ["GET","/orders/{id}","สถานะ order (ใช้ poll)"],
+    ["POST","/orders/{id}/payments","สร้างการชำระเงิน"],
+    ["POST","/webhooks/payments/{gateway}","รับ webhook จาก gateway"]
+  ]],
+  ["ผู้จัดงาน /org/{orgId}", [
+    ["GET","/events","งานขององค์กร"],
+    ["POST","/events","สร้างงาน (draft)"],
+    ["PATCH","/events/{id}","แก้ข้อมูลงาน"],
+    ["POST","/events/{id}/submit","ส่งให้แอดมินตรวจ"],
+    ["POST","/events/{id}/close","ปิดรับสมัคร"],
+    ["POST","/events/{id}/races","เพิ่มระยะ (+ price tiers, age groups)"],
+    ["PATCH","/races/{id}","แก้ระยะ โควต้า ช่วงบิบ"],
+    ["POST","/events/{id}/products","เพิ่มสินค้า/variant"],
+    ["PUT","/events/{id}/form-questions","บันทึกฟอร์มสมัคร"],
+    ["POST","/events/{id}/coupons","สร้างคูปอง"],
+    ["GET","/events/{id}/dashboard","ตัวเลขสรุป"],
+    ["GET","/events/{id}/registrations","รายชื่อผู้สมัคร (filter)"],
+    ["POST","/events/{id}/registrations","เพิ่มผู้สมัครเอง (comp)"],
+    ["PATCH","/registrations/{id}","แก้ข้อมูลผู้สมัคร"],
+    ["POST","/registrations/{id}/cancel","ยกเลิกสิทธิ์"],
+    ["GET","/refunds","คำขอคืนเงิน"],
+    ["POST","/refunds/{id}/approve","อนุมัติคืนเงิน"],
+    ["POST","/events/{id}/bibs/assign","ออกบิบตามกติกา"],
+    ["POST","/events/{id}/bibs/lock","ล็อกบิบก่อนพิมพ์"],
+    ["POST","/events/{id}/exports","สั่ง export (async) → ลิงก์ไฟล์"],
+    ["POST","/events/{id}/broadcasts","ส่งข่าวถึงผู้สมัคร"],
+    ["POST","/events/{id}/results/import","อัปโหลดผล CSV / timing"],
+    ["POST","/events/{id}/results/publish","เผยแพร่ผล"],
+    ["GET","/finance/transactions","ธุรกรรม"],
+    ["GET","/finance/payouts","ประวัติ payout"],
+    ["POST","/members","เชิญสมาชิก"],
+    ["POST","/events/{id}/staff","สร้างบัญชี staff หน้างาน"]
+  ]],
+  ["Staff หน้างาน", [
+    ["POST","/staff/session","เข้าสู่ระบบด้วยรหัสงาน"],
+    ["POST","/checkin/scan","สแกน QR → ข้อมูลผู้วิ่ง"],
+    ["GET","/checkin/search","ค้นด้วยบิบ/ชื่อ/บัตร"],
+    ["POST","/checkin/{registrationId}/confirm","ยืนยันรับของ"],
+    ["POST","/checkin/sync","ส่งรายการที่สแกนตอน offline"]
+  ]],
+  ["แอดมิน /admin", [
+    ["GET","/organizers","รายชื่อผู้จัด + KYC"],
+    ["POST","/organizers/{id}/approve","อนุมัติผู้จัด"],
+    ["POST","/organizers/{id}/suspend","ระงับผู้จัด"],
+    ["PATCH","/organizers/{id}/fee","ตั้งค่าธรรมเนียม"],
+    ["POST","/events/{id}/moderate","อนุมัติ/ตีกลับงาน"],
+    ["POST","/events/{id}/feature","ตั้งเป็นงานแนะนำ"],
+    ["GET","/orders","ค้นหา order ทั้งระบบ"],
+    ["POST","/refunds","คืนเงินแทนผู้จัด"],
+    ["GET","/payouts","รอบ payout"],
+    ["POST","/payouts/{id}/approve","อนุมัติโอน"],
+    ["GET","/reconciliation","ยอดไม่ตรงกับ gateway"],
+    ["GET","/users","ค้นหาผู้ใช้"],
+    ["CRUD","/cms/pages, /cms/banners","จัดการเนื้อหา"],
+    ["GET","/audit-logs","ประวัติการกระทำ"],
+    ["GET","/reports/gmv","รายงาน GMV / conversion"]
+  ]]
+];
+const host = document.getElementById("api-tables");
+API.forEach(([group, rows]) => {
+  const h = document.createElement("h3"); h.textContent = group; h.style.marginTop = "12px";
+  const wrap = document.createElement("div"); wrap.className = "tbl";
+  wrap.innerHTML = `<table><thead><tr><th style="width:80px">Method</th><th>Path</th><th>ใช้ทำอะไร</th></tr></thead><tbody>${
+    rows.map(([m,p,d]) => `<tr><td><span class="m ${m}">${m}</span></td><td class="path">${p}</td><td>${d}</td></tr>`).join("")
+  }</tbody></table>`;
+  host.append(h, wrap);
+});
+
+const ROLES = ["Owner","Admin","Finance","Staff","Viewer"];
+const PERM = [
+  ["แก้ข้อมูลงาน ระยะ ราคา",          "yyx-x"],
+  ["Publish / ปิดรับสมัคร",            "yy---"],
+  ["ดูรายชื่อผู้สมัคร",                 "yyyyy"],
+  ["ดูเลขบัตร / ข้อมูลสุขภาพ",          "yy-p-"],
+  ["แก้ข้อมูลผู้สมัคร",                  "yy---"],
+  ["อนุมัติคืนเงิน",                     "yyy--"],
+  ["Export ข้อมูล",                     "yyp--"],
+  ["สแกนเช็กอินหน้างาน",               "yy-y-"],
+  ["Import / publish ผล",              "yy---"],
+  ["ดูการเงิน / payout",               "ypy-p"],
+  ["แก้บัญชีธนาคาร",                    "y----"],
+  ["เชิญสมาชิก / เปลี่ยน role",          "yp---"]
+];
+const sym = {y:'<span class="yes">✓</span>', p:'<span class="part">◐</span>', "-":'<span class="no">–</span>', x:'<span class="no">–</span>'};
+document.getElementById("perm").innerHTML = `<table><thead><tr><th>การกระทำ</th>${ROLES.map(r=>`<th>${r}</th>`).join("")}</tr></thead><tbody>${
+  PERM.map(([a,s]) => `<tr><td>${a}</td>${[...s].map(c=>`<td>${sym[c]}</td>`).join("")}</tr>`).join("")
+}</tbody></table>`;
+
+const box = document.getElementById("codebox");
+const cache = {};
+async function show(file){
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.file === file));
+  if (!cache[file]) {
+    box.textContent = "กำลังโหลด…";
+    try {
+      const r = await fetch(file);
+      if (!r.ok) throw new Error(r.status);
+      cache[file] = await r.text();
+    } catch (e) {
+      box.textContent = "โหลดไฟล์ " + file + " ไม่สำเร็จ ลองรีเฟรชหน้าอีกครั้ง";
+      return;
+    }
+  }
+  box.textContent = cache[file];
+  box.scrollTop = 0;
+}
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => show(b.dataset.file)));
+document.getElementById("copy-btn").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
+  try { await navigator.clipboard.writeText(box.textContent); btn.textContent = "คัดลอกแล้ว"; }
+  catch { const s = getSelection(), r = document.createRange(); r.selectNodeContents(box); s.removeAllRanges(); s.addRange(r); btn.textContent = "เลือกข้อความแล้ว กด Ctrl+C"; }
+  setTimeout(() => btn.textContent = "คัดลอก", 1800);
+});
+show("schema.sql");
+</script>
