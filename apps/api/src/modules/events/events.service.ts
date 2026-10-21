@@ -176,7 +176,7 @@ export class EventsService {
       shirtSizeChart: e.shirt_size_chart,
       registration: { opensAt: e.registration_opens_at, closesAt: e.registration_closes_at, holdMinutes: e.hold_minutes },
       resultsPublishedAt: e.results_published_at,
-      policy: { allowTransfer: e.allow_transfer, allowRaceChange: e.allow_race_change, allowRefund: e.allow_refund, waitlist: e.waitlist_enabled },
+      policy: { allowTransfer: e.allow_transfer, allowRaceChange: e.allow_race_change, allowRefund: e.allow_refund, waitlist: e.waitlist_enabled, waitingRoom: e.use_waiting_room },
       organizer: { slug: e.org_slug, name: e.org_name, logoUrl: e.org_logo },
       races,
       products: products.rows.map((p) => ({

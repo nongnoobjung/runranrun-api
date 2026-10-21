@@ -4,12 +4,14 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppConfig, CONFIG } from '../../config';
 import { ProblemException } from '../../common/problem';
+import { RateLimit } from '../../common/rate-limit';
 import { parse } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { HoldReleaseService } from '../inventory/hold-release.service';
 import { FAKE_SIGNATURE_HEADER, fakeChargeCompleteBody, signFakeWebhook } from '../payments/fake.gateway';
 import { PAYMENT_GATEWAY, PaymentGateway } from '../payments/gateway';
 import { PaymentConfirmationService } from '../payments/payment-confirmation.service';
+import { WaitingRoomService } from '../waiting-room/waiting-room.service';
 
 /**
  * Development helpers. DevModule is only imported when ENABLE_DEV_ENDPOINTS=true,
@@ -22,12 +24,14 @@ export class DevController {
     private readonly jwt: JwtService,
     private readonly holds: HoldReleaseService,
     private readonly confirmation: PaymentConfirmationService,
+    private readonly waitingRoom: WaitingRoomService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   /** Stand-in for LINE / OTP login until the auth module lands. */
   @Post('login')
+  @RateLimit('login')
   async login(@Body() body: unknown) {
     const { email, displayName } = parse(z.object({ email: z.string().email(), displayName: z.string().max(80).optional() }), body);
     const { rows } = await this.dbs.pool.query<{ id: string }>(
@@ -91,6 +95,13 @@ export class DevController {
     const chargeId = rows[0]?.gateway_charge_id;
     if (!chargeId) throw new ProblemException(404, 'NO_PENDING_PAYMENT', 'This order has no pending payment');
     return this.completeCharge(chargeId, body);
+  }
+
+  /** Lets the next runners out of an event's waiting room now instead of waiting for the admission job. */
+  @Post('events/:eventId/queue/admit')
+  async admitQueue(@Param('eventId') eventId: string, @Body() body: unknown) {
+    const { count } = parse(z.object({ count: z.number().int().min(1).max(10_000).default(10_000) }), body ?? {});
+    return { admitted: await this.waitingRoom.admitNow(parse(z.string().uuid(), eventId), count) };
   }
 
   @Post('jobs/release-expired-holds')

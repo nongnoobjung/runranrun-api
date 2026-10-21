@@ -1,3 +1,4 @@
+import Redis from 'ioredis';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,5 +22,21 @@ export default async function globalSetup(): Promise<void> {
   process.env.DATABASE_URL = url.toString();
   process.env.TEST_DATABASE_NAME = name;
   await migrate(process.env.DATABASE_URL, () => undefined);
+
+  // The waiting room and shared rate limit tests use a real Redis when there is one (TEST_REDIS_URL, default the
+  // local docker-compose one); without it they run on the in-memory stores.
+  const redisUrl = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379';
+  const redis = new Redis(redisUrl, { lazyConnect: true, connectTimeout: 1000, maxRetriesPerRequest: 0, retryStrategy: () => null });
+  redis.on('error', () => undefined);
+  try {
+    await redis.connect();
+    await redis.ping();
+    process.env.TEST_REDIS_URL = redisUrl;
+  } catch {
+    delete process.env.TEST_REDIS_URL;
+    console.warn(`No Redis at ${redisUrl}: waiting room and rate limit tests use the in-memory stores`);
+  } finally {
+    redis.disconnect();
+  }
   process.env.TEST_STORAGE_DIR = mkdtempSync(join(tmpdir(), 'kao-test-storage-'));
 }

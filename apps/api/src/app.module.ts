@@ -2,6 +2,8 @@ import { Controller, DynamicModule, Get, Global, Module, Provider } from '@nestj
 import { JwtModule } from '@nestjs/jwt';
 import { AppConfig, CONFIG } from './config';
 import { AuthGuard } from './common/auth';
+import { RateLimitGuard, RateLimitService } from './common/rate-limit';
+import { RedisService } from './common/redis.service';
 import { IdempotencyService } from './common/idempotency.service';
 import { createStorage, FILE_STORAGE } from './common/storage';
 import { DbService } from './db/db.service';
@@ -44,6 +46,8 @@ import { ProfilesService } from './modules/profiles/profiles.service';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminService } from './modules/admin/admin.service';
 import { WebhooksController } from './modules/payments/webhooks.controller';
+import { WaitingRoomController } from './modules/waiting-room/waiting-room.controller';
+import { WaitingRoomService } from './modules/waiting-room/waiting-room.service';
 
 @Controller('health')
 class HealthController {
@@ -71,6 +75,7 @@ export class AppModule {
       EventsController,
       ResultsController,
       CheckoutController,
+      WaitingRoomController,
       OrdersController,
       WebhooksController,
       MeController,
@@ -88,6 +93,10 @@ export class AppModule {
         { provide: FILE_STORAGE, useFactory: () => createStorage(config) },
         DbService,
         AuthGuard,
+        RedisService,
+        RateLimitService,
+        RateLimitGuard,
+        WaitingRoomService,
         IdempotencyService,
         InventoryService,
         HoldReleaseService,
