@@ -6,6 +6,7 @@ import { decryptPii, encryptPii } from '../../common/crypto';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { WaitlistService } from '../waitlist/waitlist.service';
 import { writeAudit } from '../org/org-access.service';
 
 const BANKS = ['KBANK', 'SCB', 'BBL', 'KTB', 'BAY', 'TTB', 'GSB', 'KKP', 'CIMBT', 'UOBT', 'LHBANK', 'BAAC'] as const;
@@ -54,6 +55,7 @@ export class RefundsService {
   constructor(
     private readonly dbs: DbService,
     private readonly inventory: InventoryService,
+    private readonly waitlist: WaitlistService,
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -148,13 +150,16 @@ export class RefundsService {
 
   /** Accepts a runner's request: the place is given up now, and the money is owed until it is marked transferred. */
   async approve(userId: string, orgId: string, eventId: string, refundId: string) {
-    return this.dbs.transaction(async (_tx, client) => {
+    const result = await this.dbs.transaction(async (_tx, client) => {
       const f = await this.lockRefund(client, eventId, refundId, 'requested');
       await this.giveUpPlace(client, f.registration_id, 'refunded', `refund: ${f.reason ?? ''}`.trim(), Number(f.amount_satang));
       await client.query(`UPDATE refunds SET status = 'approved', approved_by = $2, updated_at = now() WHERE id = $1`, [refundId, userId]);
       await writeAudit(client, { actorId: userId, organizationId: orgId, eventId, action: 'refund.approve', entityType: 'refund', entityId: refundId });
       return { id: refundId, status: 'approved' };
     });
+    // The freed place goes to the race's waitlist first.
+    await this.waitlist.offerFreed();
+    return result;
   }
 
   async reject(userId: string, orgId: string, eventId: string, refundId: string, note: string) {
@@ -182,7 +187,7 @@ export class RefundsService {
   /** The organiser cancels a paid place themselves, paying back `refundSatang` (up to what the runner paid). */
   async cancelRegistration(userId: string, orgId: string, eventId: string, registrationId: string, input: z.infer<typeof cancelSchema>) {
     try {
-      return await this.dbs.transaction(async (_tx, client) => {
+      const result = await this.dbs.transaction(async (_tx, client) => {
         const { rows } = await client.query(
           `SELECT r.id, r.status, r.order_id, r.price_paid_satang,
                   (SELECT p.id FROM payments p WHERE p.order_id = r.order_id AND p.status = 'succeeded' LIMIT 1) AS payment_id
@@ -214,6 +219,9 @@ export class RefundsService {
         });
         return { registrationId, status: refunding ? 'refunded' : 'cancelled', refundId };
       });
+      // The freed place goes to the race's waitlist first.
+      await this.waitlist.offerFreed();
+      return result;
     } catch (err) {
       if (err instanceof DatabaseError && err.code === '23505' && err.constraint === 'uq_refunds_open_registration') throw ineligible('REFUND_IN_PROGRESS');
       throw err;

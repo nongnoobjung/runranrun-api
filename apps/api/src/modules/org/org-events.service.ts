@@ -28,6 +28,8 @@ export const eventFieldsSchema = z.object({
   refundDeadline: isoDateTime.nullable(),
   /** Share of the registration price paid back, in basis points (8000 = 80%). */
   refundPercentBps: z.number().int().min(0).max(10_000),
+  /** Let runners queue for a race once it is full. */
+  waitlistEnabled: z.boolean(),
 });
 export type EventFields = z.infer<typeof eventFieldsSchema>;
 
@@ -51,6 +53,7 @@ const EVENT_COLUMNS: Record<keyof EventFields, string> = {
   allowRefund: 'allow_refund',
   refundDeadline: 'refund_deadline',
   refundPercentBps: 'refund_percent_bps',
+  waitlistEnabled: 'waitlist_enabled',
 };
 
 export const raceFieldsSchema = z.object({
@@ -189,7 +192,7 @@ export class OrgEventsService {
       eventDate: e.event_date_text, provinceCode: e.province_code, venueName: e.venue_name, venueAddress: e.venue_address,
       summaryTh: e.summary_th, descriptionTh: e.description_th, coverImageUrl: e.cover_image_url,
       registrationOpensAt: e.registration_opens_at, registrationClosesAt: e.registration_closes_at, holdMinutes: e.hold_minutes,
-      allowRefund: e.allow_refund, refundDeadline: e.refund_deadline, refundPercentBps: e.refund_percent_bps,
+      allowRefund: e.allow_refund, refundDeadline: e.refund_deadline, refundPercentBps: e.refund_percent_bps, waitlistEnabled: e.waitlist_enabled,
       publishedAt: e.published_at, races: raceViews, shirt, readiness,
     };
   }

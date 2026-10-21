@@ -766,6 +766,7 @@ CREATE TABLE waitlist_entries (
   offered_at        TIMESTAMPTZ,
   offer_expires_at  TIMESTAMPTZ,
   registration_id   UUID REFERENCES registrations(id),
+  checkout_session_id UUID REFERENCES checkout_sessions(id),  -- checkout ที่รับสิทธิ์ไป; NULL = ยังกันที่ไว้ให้
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (race_id, position)
 );

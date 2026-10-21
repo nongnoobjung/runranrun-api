@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { PoolClient } from 'pg';
 import { DbService } from '../../db/db.service';
 import { ProblemException, problems } from '../../common/problem';
 import { InventoryService, RaceHold } from '../inventory/inventory.service';
@@ -23,7 +24,11 @@ export class CheckoutService {
     private readonly inventory: InventoryService,
   ) {}
 
-  async create(userId: string, input: CreateSessionInput) {
+  /**
+   * `beforeReserve` runs inside the session's transaction just before places are reserved, e.g. to hand a waitlist
+   * offer's held place over to this checkout without anyone else taking it in between.
+   */
+  async create(userId: string, input: CreateSessionInput, beforeReserve?: (client: PoolClient, sessionId: string) => Promise<void>) {
     const races = mergeQuantities(input.races.map((r) => [r.raceId, r.quantity]));
     const variants = mergeQuantities(input.variants.map((v) => [v.variantId, v.quantity]));
     const runners = [...races.values()].reduce((s, q) => s + q, 0);
@@ -68,6 +73,7 @@ export class CheckoutService {
         [event.id, userId, event.hold_minutes],
       );
       const { id: sessionId, expires_at: expiresAt } = session.rows[0];
+      await beforeReserve?.(client, sessionId);
 
       // Lock rows in a fixed order so two sessions touching the same races cannot deadlock.
       const holds: RaceHold[] = [];

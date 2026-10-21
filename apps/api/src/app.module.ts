@@ -34,6 +34,7 @@ import { OmiseGateway } from './modules/payments/omise.gateway';
 import { PaymentConfirmationService } from './modules/payments/payment-confirmation.service';
 import { PaymentsService } from './modules/payments/payments.service';
 import { RefundsService } from './modules/refunds/refunds.service';
+import { WaitlistService } from './modules/waitlist/waitlist.service';
 import { WebhooksController } from './modules/payments/webhooks.controller';
 
 @Controller('health')
@@ -98,6 +99,7 @@ export class AppModule {
         OrgResultsService,
         OrgBibsService,
         RefundsService,
+        WaitlistService,
       ],
       exports: [CONFIG, DbService],
     };

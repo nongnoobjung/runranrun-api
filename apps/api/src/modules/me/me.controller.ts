@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { problems } from '../../common/problem';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { refundRequestSchema, RefundsService } from '../refunds/refunds.service';
+import { WaitlistService } from '../waitlist/waitlist.service';
 
 const REGISTRATION_SQL = `
   SELECT r.id, r.registration_no, r.status, r.bib_number, r.qr_token, r.shirt_size, r.first_name_en, r.last_name_en,
@@ -25,6 +27,7 @@ export class MeController {
   constructor(
     private readonly dbs: DbService,
     private readonly refunds: RefundsService,
+    private readonly waitlist: WaitlistService,
   ) {}
 
   @Get('registrations')
@@ -44,6 +47,28 @@ export class MeController {
   @Get('registrations/:id/refund')
   async refundQuote(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.refunds.quote(user.id, parse(uuidSchema, id));
+  }
+
+  @Get('waitlist')
+  async myWaitlist(@CurrentUser() user: AuthUser) {
+    return this.waitlist.mine(user.id);
+  }
+
+  /** Queue for a full race. */
+  @Post('waitlist')
+  async joinWaitlist(@CurrentUser() user: AuthUser, @Body() body: unknown) {
+    return this.waitlist.join(user.id, parse(z.object({ raceId: z.string().uuid() }), body).raceId);
+  }
+
+  @Delete('waitlist/:id')
+  async leaveWaitlist(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.waitlist.leave(user.id, parse(uuidSchema, id));
+  }
+
+  /** Takes up an offered place: returns the checkout to fill in and pay. */
+  @Post('waitlist/:id/claim')
+  async claimWaitlist(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.waitlist.claim(user.id, parse(uuidSchema, id));
   }
 
   @Post('registrations/:id/refund-requests')

@@ -4,6 +4,7 @@ import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { cancelSchema, refundListSchema, RefundsService, rejectSchema, transferredSchema } from '../refunds/refunds.service';
+import { WaitlistService } from '../waitlist/waitlist.service';
 import { OrgAccessService } from './org-access.service';
 import { broadcastFieldsSchema, createBroadcastSchema, OrgBroadcastsService, previewSchema, sendSchema } from './org-broadcasts.service';
 import { OrgFinanceService, transactionsQuerySchema } from './org-finance.service';
@@ -40,6 +41,7 @@ export class OrgController {
     private readonly coupons: OrgCouponsService,
     private readonly registrations: OrgRegistrationsService,
     private readonly members: OrgMembersService,
+    private readonly waitlist: WaitlistService,
     private readonly results: OrgResultsService,
     private readonly broadcasts: OrgBroadcastsService,
     private readonly refunds: RefundsService,
@@ -392,6 +394,23 @@ export class OrgController {
   async publishResults(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
     const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
     return this.results.publish(user.id, e.organizationId, e.eventId, parse(publishSchema, body).published);
+  }
+
+  @Get(':orgId/events/:eventId/waitlist')
+  async eventWaitlist(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'view');
+    return this.waitlist.forEvent(e.eventId);
+  }
+
+  /** Offers the event's free places to its queues now instead of at the next 30-second run. */
+  @Post(':orgId/events/:eventId/waitlist/offer')
+  @HttpCode(200)
+  async offerWaitlist(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    const { rows } = await this.dbs.pool.query<{ id: string }>('SELECT id FROM races WHERE event_id = $1 AND is_active', [e.eventId]);
+    let offered = 0;
+    for (const r of rows) offered += await this.waitlist.offerFreed(r.id);
+    return { offered, ...(await this.waitlist.forEvent(e.eventId)) };
   }
 
   @Get(':orgId/events/:eventId/broadcasts')
