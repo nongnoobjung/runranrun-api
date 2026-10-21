@@ -5,6 +5,7 @@ import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { cancelSchema, refundListSchema, RefundsService, rejectSchema, transferredSchema } from '../refunds/refunds.service';
 import { OrgAccessService } from './org-access.service';
+import { OrgFinanceService, transactionsQuerySchema } from './org-finance.service';
 import { assignSchema, importSchema, OrgBibsService, setBibSchema } from './org-bibs.service';
 import { couponFieldsSchema, createCouponSchema, OrgCouponsService } from './org-coupons.service';
 import {
@@ -38,6 +39,7 @@ export class OrgController {
     private readonly registrations: OrgRegistrationsService,
     private readonly members: OrgMembersService,
     private readonly refunds: RefundsService,
+    private readonly finance: OrgFinanceService,
     private readonly questions: OrgQuestionsService,
     private readonly bibs: OrgBibsService,
   ) {}
@@ -81,6 +83,39 @@ export class OrgController {
   async removeMember(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('memberId') memberId: string) {
     const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'manage_team');
     return this.members.remove(user.id, m.organizationId, parse(uuidSchema, memberId));
+  }
+
+  @Get(':orgId/finance')
+  async orgFinance(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'view_finance');
+    return this.finance.orgSummary(m.organizationId);
+  }
+
+  @Get(':orgId/events/:eventId/finance')
+  async eventFinance(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'view_finance');
+    return this.finance.eventSummary(e.organizationId, e.eventId);
+  }
+
+  @Get(':orgId/events/:eventId/finance/transactions')
+  async transactions(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Query() query: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'view_finance');
+    return this.finance.transactions(e.organizationId, e.eventId, parse(transactionsQuerySchema, query));
+  }
+
+  @Get(':orgId/events/:eventId/finance/transactions.csv')
+  @Header('content-type', 'text/csv; charset=utf-8')
+  async transactionsCsv(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Query() query: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'view_finance');
+    const { status } = parse(transactionsQuerySchema, query);
+    void reply.header('content-disposition', `attachment; filename="transactions-${e.eventId.slice(0, 8)}.csv"`);
+    return this.finance.transactionsCsv(user.id, e.organizationId, e.eventId, status);
   }
 
   @Get(':orgId/events')

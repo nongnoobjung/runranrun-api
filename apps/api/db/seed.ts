@@ -17,6 +17,13 @@ async function main(): Promise<void> {
     }
     await addOrgMember(pool, organizationId, RIVERSIDE_ORGANIZER_EMAIL, 'owner');
     console.log(`organizer login: ${RIVERSIDE_ORGANIZER_EMAIL} (owner of the organisation)`);
+    // A sample platform commission for local development; real rates are set per organiser by the platform.
+    const fee = await pool.query(
+      `INSERT INTO platform_fees (organization_id, percent_bps)
+       SELECT NULL, 300 WHERE NOT EXISTS (SELECT 1 FROM platform_fees WHERE organization_id IS NULL)
+       RETURNING id`,
+    );
+    if (fee.rowCount) console.log('default platform fee: 3% of sales (development sample)');
   } finally {
     await pool.end();
   }

@@ -1,4 +1,4 @@
-import { ageOn, computeTotals } from './pricing';
+import { ageOn, computeTotals, platformFee } from './pricing';
 
 describe('computeTotals', () => {
   const lines = [
@@ -55,5 +55,16 @@ describe('ageOn', () => {
     expect(ageOn('1990-03-12', '2027-02-14')).toBe(36);
     expect(ageOn('1990-02-14', '2027-02-14')).toBe(37);
     expect(ageOn('2011-02-15', '2027-02-14')).toBe(15);
+  });
+});
+
+describe('platformFee', () => {
+  it('takes a share of the sales plus a fixed amount per registration', () => {
+    expect(platformFee(200_000, 2, { percentBps: 300, fixedPerRegistrationSatang: 500 })).toBe(7_000);
+    expect(platformFee(33_333, 1, { percentBps: 250, fixedPerRegistrationSatang: 0 })).toBe(833);
+  });
+
+  it('is nothing without a plan', () => {
+    expect(platformFee(200_000, 2, null)).toBe(0);
   });
 });

@@ -55,6 +55,20 @@ export function computeTotals(lines: PricedLine[], coupon: CouponRule | null, fe
   return { subtotalSatang: subtotal, discountSatang: discount, feeSatang: fee, totalSatang: subtotal - discount + fee, lineDiscounts };
 }
 
+export interface PlatformFeePlan {
+  percentBps: number;
+  fixedPerRegistrationSatang: number;
+}
+
+/**
+ * The platform's share of an order: a percentage of what the organiser sells (after discounts, before the
+ * runner fee) plus a fixed amount per registration. It comes out of the organiser's payout, not the runner's bill.
+ */
+export function platformFee(salesSatang: number, registrations: number, plan: PlatformFeePlan | null): number {
+  if (!plan) return 0;
+  return Math.round((salesSatang * plan.percentBps) / 10_000) + plan.fixedPerRegistrationSatang * registrations;
+}
+
 /** Age in whole years on the given day (race day), using calendar dates only. */
 export function ageOn(birthDate: string, onDate: string): number {
   const [by, bm, bd] = birthDate.split('-').map(Number);
