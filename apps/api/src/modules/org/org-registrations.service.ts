@@ -166,6 +166,10 @@ export class OrgRegistrationsService {
       if (r.status !== 'confirmed') {
         throw new ProblemException(409, 'NOT_CONFIRMED', 'This registration is not paid or is no longer valid', undefined, { registration: checkinView(r) });
       }
+      const refund = await client.query(`SELECT 1 FROM refunds WHERE registration_id = $1 AND status = 'requested'`, [r.id]);
+      if (refund.rowCount) {
+        throw new ProblemException(409, 'REFUND_PENDING', 'This runner has asked for a refund; settle it before handing over the kit', undefined, { registration: checkinView(r) });
+      }
       if (r.kit_picked_up_at) {
         throw new ProblemException(409, 'ALREADY_PICKED_UP', 'This runner has already collected the kit', undefined, { registration: checkinView(r) });
       }

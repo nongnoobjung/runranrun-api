@@ -707,6 +707,8 @@ CREATE TABLE refunds (
   -- โอนคืนเอง (PromptPay ไม่รองรับ refund ผ่าน gateway บางเจ้า)
   manual_bank_info_enc BYTEA,
   release_inventory BOOLEAN NOT NULL DEFAULT true,
+  organizer_note    TEXT,                       -- เหตุผลที่ปฏิเสธ
+  transfer_reference TEXT,                      -- เลขอ้างอิงการโอนคืน
   processed_at      TIMESTAMPTZ,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -714,6 +716,8 @@ CREATE TABLE refunds (
 );
 CREATE INDEX idx_refunds_order ON refunds(order_id);
 CREATE INDEX idx_refunds_open ON refunds(created_at) WHERE status IN ('requested', 'approved', 'processing');
+CREATE UNIQUE INDEX uq_refunds_open_registration ON refunds(registration_id)
+  WHERE registration_id IS NOT NULL AND status IN ('requested', 'approved', 'processing');
 
 -- โอนสิทธิ์ให้คนอื่น
 CREATE TABLE transfers (
