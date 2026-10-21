@@ -36,9 +36,9 @@ export class CheckoutService {
       [input.eventId],
     );
     const event = eventRows[0];
-    if (!event || event.status !== 'published') throw problems.notFound('Event');
+    if (!event || !['published', 'closed'].includes(event.status)) throw problems.notFound('Event');
     const now = new Date();
-    if ((event.registration_opens_at && now < event.registration_opens_at) || (event.registration_closes_at && now >= event.registration_closes_at)) {
+    if (event.status === 'closed' || (event.registration_opens_at && now < event.registration_opens_at) || (event.registration_closes_at && now >= event.registration_closes_at)) {
       throw new ProblemException(409, 'REGISTRATION_CLOSED', 'Registration is not open for this event');
     }
 

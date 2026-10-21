@@ -27,6 +27,11 @@ export function raceAvailability(
   return 'open';
 }
 
+/** An organiser can close sales early; the event page then reads as closed whatever the scheduled date. */
+function salesEnd(e: { status: string; registration_closes_at: Date | null }): Date | null {
+  return e.status === 'closed' ? new Date() : e.registration_closes_at;
+}
+
 @Injectable()
 export class EventsService {
   constructor(private readonly dbs: DbService) {}
@@ -96,7 +101,7 @@ export class EventsService {
     const e = rows[0];
     if (!e) throw problems.notFound('Event');
 
-    const races = await this.racesWithAvailability(e.id, e.registration_opens_at, e.registration_closes_at);
+    const races = await this.racesWithAvailability(e.id, e.registration_opens_at, salesEnd(e));
     const products = await this.dbs.pool.query(
       `SELECT p.id, p.product_type, p.name_th, p.price_satang, p.is_required, p.included_in_race, p.per_registration,
               COALESCE(json_agg(json_build_object(
@@ -144,12 +149,12 @@ export class EventsService {
 
   async availability(slug: string) {
     const { rows } = await this.dbs.pool.query(
-      `SELECT id, registration_opens_at, registration_closes_at FROM events
+      `SELECT id, status, registration_opens_at, registration_closes_at FROM events
         WHERE slug = $1 AND status IN ('published', 'closed')`,
       [slug],
     );
     if (!rows[0]) throw problems.notFound('Event');
-    return { races: await this.racesWithAvailability(rows[0].id, rows[0].registration_opens_at, rows[0].registration_closes_at) };
+    return { races: await this.racesWithAvailability(rows[0].id, rows[0].registration_opens_at, salesEnd(rows[0])) };
   }
 
   private async racesWithAvailability(eventId: string, opensAt: Date | null, closesAt: Date | null) {
