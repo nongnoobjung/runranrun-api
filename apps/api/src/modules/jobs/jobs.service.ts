@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdo
 import { Queue, Worker } from 'bullmq';
 import { AppConfig, CONFIG } from '../../config';
 import { HoldReleaseService } from '../inventory/hold-release.service';
+import { WaitlistService } from '../waitlist/waitlist.service';
 
 const QUEUE = 'maintenance';
 const RELEASE_HOLDS = 'release-expired-holds';
@@ -19,6 +20,7 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
     private readonly holds: HoldReleaseService,
+    private readonly waitlist: WaitlistService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -29,7 +31,8 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     this.worker = new Worker(
       QUEUE,
       async (job) => {
-        if (job.name === RELEASE_HOLDS) return { released: await this.holds.releaseExpired() };
+        // Places freed by lapsed checkouts or offers go to the waitlist before anyone else can take them.
+        if (job.name === RELEASE_HOLDS) return { released: await this.holds.releaseExpired(), offered: await this.waitlist.offerFreed() };
         return null;
       },
       { connection, concurrency: 1 },

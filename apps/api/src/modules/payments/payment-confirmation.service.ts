@@ -132,6 +132,13 @@ export class PaymentConfirmationService {
     );
     // Races numbered by hand, or whose range is used up, are left for the organiser to number.
     for (const reg of regs.rows) await assignNextBib(client, { id: reg.id, raceId: reg.race_id, eventId: reg.event_id }, true);
+    // A checkout claimed from a waitlist offer: the runner is off the queue.
+    await client.query(
+      `UPDATE waitlist_entries w SET status = 'converted',
+              registration_id = (SELECT r.id FROM registrations r WHERE r.order_id = $1 AND r.race_id = w.race_id ORDER BY r.registration_no LIMIT 1)
+        WHERE w.checkout_session_id = $2 AND w.status = 'offered'`,
+      [orderId, sessionId],
+    );
   }
 
   private async requestRefund(client: PoolClient, orderId: string, paymentId: string, reason: string): Promise<void> {

@@ -19,6 +19,8 @@ const schema = z.object({
   OMISE_PUBLIC_KEY: z.string().optional(),
   OMISE_SECRET_KEY: z.string().optional(),
   PUBLIC_WEB_URL: z.string().url().default('http://localhost:3000'),
+  /** How long a waitlist offer holds a place for the runner before it passes to the next in line. */
+  WAITLIST_OFFER_HOURS: z.coerce.number().positive().max(168).default(24),
   ENABLE_DEV_ENDPOINTS: z
     .enum(['true', 'false'])
     .default('false')
