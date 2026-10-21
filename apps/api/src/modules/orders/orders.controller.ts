@@ -11,7 +11,7 @@ import { OrdersService } from './orders.service';
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'use YYYY-MM-DD');
 const phone = z.string().regex(/^\+?[0-9-]{9,15}$/, 'invalid phone number');
 
-const runnerSchema = z.object({
+export const runnerSchema = z.object({
   firstNameTh: z.string().trim().min(1).max(80).optional(),
   lastNameTh: z.string().trim().min(1).max(80).optional(),
   firstNameEn: z.string().trim().min(1).max(60).regex(/^[A-Za-z .'-]+$/, 'English letters only'),

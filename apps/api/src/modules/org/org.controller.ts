@@ -3,6 +3,7 @@ import { FastifyReply } from 'fastify';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
+import { ChangesService, raceChangeSchema } from '../changes/changes.service';
 import { cancelSchema, refundListSchema, RefundsService, rejectSchema, transferredSchema } from '../refunds/refunds.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 import { OrgAccessService } from './org-access.service';
@@ -48,6 +49,7 @@ export class OrgController {
     private readonly finance: OrgFinanceService,
     private readonly questions: OrgQuestionsService,
     private readonly bibs: OrgBibsService,
+    private readonly changes: ChangesService,
   ) {}
 
   /**
@@ -361,6 +363,27 @@ export class OrgController {
   ) {
     const e = await this.eventAccess(user, orgId, eventId, 'manage_refunds');
     return this.refunds.markTransferred(user.id, e.organizationId, e.eventId, parse(uuidSchema, refundId), parse(transferredSchema, body).reference);
+  }
+
+  /** Transfers and race changes in the event. */
+  @Get(':orgId/events/:eventId/changes')
+  async eventChanges(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'view');
+    return this.changes.forEvent(e.eventId);
+  }
+
+  /** Moves a runner to another race of the event, without payment. */
+  @Post(':orgId/events/:eventId/registrations/:registrationId/race-change')
+  @HttpCode(200)
+  async moveRegistration(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('eventId') eventId: string,
+    @Param('registrationId') registrationId: string,
+    @Body() body: unknown,
+  ) {
+    const e = await this.eventAccess(user, orgId, eventId, 'manage_event');
+    return this.changes.organiserRaceChange(user.id, e.eventId, parse(uuidSchema, registrationId), parse(raceChangeSchema, body).toRaceId);
   }
 
   @Post(':orgId/events/:eventId/registrations/:registrationId/cancel')

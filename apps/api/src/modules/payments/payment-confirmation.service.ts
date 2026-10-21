@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DbService } from '../../db/db.service';
 import { assignNextBib } from '../bibs/next-bib';
+import { settleChangeOrder } from '../changes/settle';
 import { InventoryService } from '../inventory/inventory.service';
 import { VerifiedWebhook } from './gateway';
 
@@ -90,7 +91,7 @@ export class PaymentConfirmationService {
 
     if (order.status === 'pending_payment') {
       await this.inventory.commitSession(client, order.checkout_session_id);
-      await this.markPaid(client, order.id, order.checkout_session_id);
+      await this.markPaid(client, order.id, order.checkout_session_id, payment.id);
       return 'confirmed';
     }
 
@@ -105,7 +106,7 @@ export class PaymentConfirmationService {
         [order.id],
       );
       await client.query('UPDATE coupon_redemptions SET voided_at = NULL WHERE order_id = $1', [order.id]);
-      await this.markPaid(client, order.id, order.checkout_session_id);
+      await this.markPaid(client, order.id, order.checkout_session_id, payment.id);
       await client.query('RELEASE SAVEPOINT late_payment');
       return 'late_confirmed';
     } catch {
@@ -116,7 +117,7 @@ export class PaymentConfirmationService {
     }
   }
 
-  private async markPaid(client: PoolClient, orderId: string, sessionId: string): Promise<void> {
+  private async markPaid(client: PoolClient, orderId: string, sessionId: string, paymentId: string): Promise<void> {
     await client.query(`UPDATE orders SET status = 'paid', paid_at = now() WHERE id = $1`, [orderId]);
     await client.query(`UPDATE checkout_sessions SET status = 'converted' WHERE id = $1`, [sessionId]);
     await client.query(
@@ -139,6 +140,8 @@ export class PaymentConfirmationService {
         WHERE w.checkout_session_id = $2 AND w.status = 'offered'`,
       [orderId, sessionId],
     );
+    // A transfer fee or race change order: the change happens now, or the money goes back if it no longer can.
+    if ((await settleChangeOrder(client, orderId)) === 'refund') await this.requestRefund(client, orderId, paymentId, 'change_not_possible');
   }
 
   private async requestRefund(client: PoolClient, orderId: string, paymentId: string, reason: string): Promise<void> {

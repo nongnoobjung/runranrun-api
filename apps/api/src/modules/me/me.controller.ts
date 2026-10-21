@@ -4,6 +4,7 @@ import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { problems } from '../../common/problem';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
+import { acceptTransferSchema, ChangesService, raceChangeSchema, transferRequestSchema } from '../changes/changes.service';
 import { refundRequestSchema, RefundsService } from '../refunds/refunds.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 
@@ -18,7 +19,7 @@ const REGISTRATION_SQL = `
     JOIN events e ON e.id = r.event_id
     LEFT JOIN orders o ON o.id = r.order_id
     LEFT JOIN age_groups ag ON ag.id = r.age_group_id
-   WHERE (r.runner_user_id = $1 OR o.buyer_user_id = $1)
+   WHERE (r.runner_user_id = $1 OR (o.buyer_user_id = $1 AND r.transferred_from_id IS NULL))
      AND r.status IN ('pending', 'confirmed')`;
 
 @Controller('me')
@@ -28,6 +29,7 @@ export class MeController {
     private readonly dbs: DbService,
     private readonly refunds: RefundsService,
     private readonly waitlist: WaitlistService,
+    private readonly changes: ChangesService,
   ) {}
 
   @Get('registrations')
@@ -69,6 +71,51 @@ export class MeController {
   @Post('waitlist/:id/claim')
   async claimWaitlist(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.waitlist.claim(user.id, parse(uuidSchema, id));
+  }
+
+  /** Whether the place can be transferred or moved to another race, the open one if any, and the races to move to. */
+  @Get('registrations/:id/changes')
+  async changeOptions(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.changes.options(user.id, parse(uuidSchema, id));
+  }
+
+  /** Offers the place to someone else by email. */
+  @Post('registrations/:id/transfers')
+  async createTransfer(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.changes.createTransfer(user.id, parse(uuidSchema, id), parse(transferRequestSchema, body).toEmail);
+  }
+
+  @Post('registrations/:id/race-changes')
+  async requestRaceChange(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.changes.requestRaceChange(user.id, parse(uuidSchema, id), parse(raceChangeSchema, body).toRaceId);
+  }
+
+  @Delete('race-changes/:id')
+  async cancelRaceChange(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.changes.cancelRaceChange(user.id, parse(uuidSchema, id));
+  }
+
+  /** Transfers offered to the user's email, and the ones they sent. */
+  @Get('transfers')
+  async transfers(@CurrentUser() user: AuthUser) {
+    return this.changes.mine(user.id);
+  }
+
+  /** The sender takes the offer back. */
+  @Delete('transfers/:id')
+  async cancelTransfer(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.changes.cancelTransfer(user.id, parse(uuidSchema, id));
+  }
+
+  /** The recipient takes the place with their own runner details (and pays the fee, if any). */
+  @Post('transfers/:id/accept')
+  async acceptTransfer(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.changes.acceptTransfer(user.id, parse(uuidSchema, id), parse(acceptTransferSchema, body));
+  }
+
+  @Post('transfers/:id/decline')
+  async declineTransfer(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.changes.declineTransfer(user.id, parse(uuidSchema, id));
   }
 
   @Post('registrations/:id/refund-requests')

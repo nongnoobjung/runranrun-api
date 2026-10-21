@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '../../db/db.service';
+import { releaseChangeOrder } from '../changes/settle';
 import { InventoryService } from './inventory.service';
 
 /** Expires abandoned checkouts: returns places, expires unpaid orders and frees the runners' ID slots. */
@@ -47,6 +48,7 @@ export class HoldReleaseService {
               `UPDATE payments SET status = 'expired' WHERE order_id = $1 AND status = 'pending'`,
               [order.id],
             );
+            await releaseChangeOrder(client, order.id);
           }
         }
         return rows.length;
