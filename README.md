@@ -49,7 +49,7 @@ pnpm dev:api                         # http://localhost:4000/v1
 | Export CSV, ดูเลขบัตรเต็ม | `GET .../registrations.csv`, `POST .../registrations/:id/reveal-id-doc` | owner, admin |
 | บิบ: ภาพรวมช่วงเลข, ให้เลขเอง, ออกเลขให้คนที่ยังไม่มี, นำเข้า CSV | `GET .../events/:id/bibs`, `PUT .../registrations/:registrationId/bib`, `POST .../bibs/assign`, `POST .../bibs/import` | owner, admin (ดูได้ทุกบทบาท) |
 | การเงิน: สรุปยอดงาน/ทั้งองค์กร, ธุรกรรม, Export CSV, รอบ payout | `GET /v1/org/:orgId/finance`, `GET .../events/:id/finance`, `GET .../finance/transactions`, `GET .../finance/transactions.csv` | owner, admin, finance |
-| รับเสื้อและบิบหน้างาน | `GET .../checkins/lookup?code=`, `POST .../checkins` | owner, admin, staff |
+| รับเสื้อและบิบหน้างาน, รายชื่อสำหรับออฟไลน์, ส่งคิวที่บันทึกตอนออฟไลน์ | `GET .../checkins/lookup?code=`, `POST .../checkins`, `GET .../checkins/roster`, `POST .../checkins/batch` | owner, admin, staff |
 | คืนเงิน: รายการคำขอ, อนุมัติ, ปฏิเสธ, บันทึกโอนคืน, ยกเลิกสิทธิ์เอง | `GET .../events/:id/refunds?status=open\|closed`, `POST .../refunds/:refundId/approve\|reject\|transferred`, `POST .../registrations/:registrationId/cancel` | owner, admin, finance |
 | ผลการแข่งขัน: สรุป, นำเข้า CSV (ตรวจก่อน), เผยแพร่ | `GET .../events/:id/results`, `POST .../results/import`, `POST .../results/publish` | owner, admin (ดูได้ทุกบทบาท) |
 | ส่งข่าว: ร่าง, นับผู้รับ/ตัวอย่าง, ส่งทดสอบ, ส่งเลยหรือตั้งเวลา | `GET/POST .../events/:id/broadcasts`, `PATCH/DELETE .../broadcasts/:id`, `POST .../broadcasts/preview`, `POST .../broadcasts/:id/test\|send\|unschedule` | owner, admin |
@@ -70,6 +70,10 @@ pnpm dev:api                         # http://localhost:4000/v1
   - นำเข้า CSV (คอลัมน์ `registration_no`, `bib` เช่นไฟล์ Export ที่กรอก bib แล้ว) ตรวจทุกแถวก่อน มีแถวผิดแถวเดียวไม่บันทึกเลย สลับเลขกันในไฟล์ได้
 - **เปิดรับสมัครได้เมื่อพร้อม:** ต้องมีข้อมูลงาน สถานที่ ช่วงเวลารับสมัคร อย่างน้อยหนึ่งระยะ ทุกระยะมีราคา และทีมผู้จัดผ่าน KYC แล้ว
   - ผู้จัดที่ตั้งให้ต้องตรวจ (`organizations.review_events` ค่าเริ่มต้นของทีมใหม่) กดเปิดครั้งแรกแล้วงานเป็น `pending_review` รอแอดมินอนุมัติ หลังอนุมัติปิด/เปิดเองได้ ถ้าถูกส่งกลับ งานกลับเป็นร่างพร้อม `review.note`
+- **รับของแบบออฟไลน์:** `GET .../checkins/roster` ส่งเฉพาะผู้สมัครที่ชำระแล้ว: เลขสมัคร บิบ ชื่อ ระยะ ไซซ์เสื้อ สถานะรับของ และมีคำขอคืนเงินค้างหรือไม่ ไม่มีเบอร์ อีเมล หรือเลขบัตร
+  - QR ส่งเป็น SHA-256 ของ `qr_token` (หน้าเว็บ hash QR ที่สแกนแล้วเทียบ) รายชื่อที่หลุดไปจึงสร้างบัตรปลอมไม่ได้ ทุกการดาวน์โหลดบันทึกใน `audit_logs` (`checkins.roster_download`)
+  - `POST .../checkins/batch` รับคิวไม่เกิน 200 รายการตามลำดับที่สแกน แต่ละรายการเป็น transaction ของตัวเอง ตอบผลรายตัว (`ok`, `replayed` หรือ `code` เช่น `ALREADY_PICKED_UP`, `REFUND_PENDING`, `NOT_CONFIRMED`, `REGISTRATION_NOT_FOUND`)
+  - `clientUuid` เดิมส่งซ้ำได้ ไม่บันทึกซ้ำ (รวมถึงส่งพร้อมกันสองครั้ง) `scannedAt` เป็นเวลารับของจริงบนเครื่อง เวลาที่เกินปัจจุบันนับเป็นตอนนี้
 - **คูปอง:** ล็อกส่วนลดเมื่อมีคนใช้โค้ดแล้ว แต่ยังปิดใช้หรือปรับจำนวนสิทธิ์ได้
 - **คำถามเพิ่มเติม:** ข้อความสั้น/ยาว, ตัวเลข (กำหนดช่วงได้), เลือกหนึ่งหรือหลายข้อ, ติ๊กยืนยัน, วันที่ ถามทุกระยะหรือเฉพาะบางระยะ งานละไม่เกิน 30 ข้อ
   - หน้างาน `GET /v1/events/:slug` ส่ง `questions` ให้ฟอร์มสมัคร และ `POST /v1/orders` ตรวจคำตอบของนักวิ่งแต่ละคนตามระยะ (ตอบไม่ครบหรือผิดได้ 422 พร้อม path `participants.N.answers.<key>`) แล้วเก็บใน `registrations.answers`
@@ -153,7 +157,7 @@ test สร้างฐานข้อมูลชั่วคราวบน Po
 - Idempotency-Key, สมัครซ้ำด้วยบัตรเดิม, อายุไม่ถึง, webhook ปลอม
 - Omise adapter (mock HTTP)
 - ฟอร์มสมัคร: สร้าง/เรียงคำถาม, ตรวจคำตอบตามระยะ, คำตอบในรายละเอียดและ CSV, ล็อกประเภทเมื่อมีคนตอบ
-- backoffice: สิทธิ์ตามบทบาท, สร้างงานจนเปิดรับสมัคร, กันลดโควต้า/สต็อกเกินที่ขาย, บิบทับกัน, คูปอง, ค้นหา/Export/audit, รับของหน้างาน, ภาพรวม
+- backoffice: สิทธิ์ตามบทบาท, สร้างงานจนเปิดรับสมัคร, กันลดโควต้า/สต็อกเกินที่ขาย, บิบทับกัน, คูปอง, ค้นหา/Export/audit, รับของหน้างาน, รายชื่อออฟไลน์และส่งคิว (ลำดับ, เวลาสแกน, ชนกับเครื่องอื่น, ส่งซ้ำ), ภาพรวม
 - บิบ: ภาพรวม, ให้เลขเอง/ลบเลข, เลขซ้ำ, ออกเลขข้ามเลขที่มีคนใช้และหยุดเมื่อช่วงเต็ม, นำเข้า CSV (ตรวจทุกแถว, สลับเลข)
 - คืนเงิน: ขอตามนโยบาย, บัญชีรับเงิน, กันรับของระหว่างรอ, อนุมัติแล้วคืนที่/ไซซ์/ช่วงราคา/คูปอง, ปฏิเสธ, บันทึกโอนคืน, ผู้จัดยกเลิกเอง, นโยบายและกำหนดเวลา
 - ส่งข่าว: นับผู้รับตามตัวกรอง, แทนค่าในข้อความ, ส่งทดสอบ, ส่งแต่ละคนครั้งเดียว, ตั้งเวลา/ยกเลิก/ถึงเวลาแล้วส่ง, ส่งต่อที่ค้าง, สิทธิ์

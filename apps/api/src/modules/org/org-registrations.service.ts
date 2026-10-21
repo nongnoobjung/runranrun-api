@@ -24,7 +24,12 @@ export const checkinSchema = z.object({
   clientUuid: z.string().uuid(),
   pickedUpBy: z.string().trim().max(120).nullable().default(null),
   shirtSizeGiven: z.string().trim().max(10).nullable().default(null),
+  /** When the device recorded the pickup, for scans queued offline. A clock ahead of the server counts as now. */
+  scannedAt: z.string().datetime({ offset: true }).optional(),
 });
+
+/** A queue of pickups recorded offline, in the order they were scanned. */
+export const checkinBatchSchema = z.object({ items: z.array(checkinSchema).min(1).max(200) });
 
 const LIST_COLUMNS = `
   r.id, r.registration_no, r.bib_number, r.status, r.first_name_th, r.last_name_th, r.first_name_en, r.last_name_en,
@@ -169,13 +174,75 @@ export class OrgRegistrationsService {
   }
 
   async checkin(userId: string, orgId: string, eventId: string, input: z.infer<typeof checkinSchema>) {
+    return (await this.record(userId, orgId, eventId, input, false)).registration;
+  }
+
+  /**
+   * Sends a device's offline queue. Each item is its own transaction, so a runner who was already
+   * picked up at another table, asked for a refund or never paid is reported for that item and the rest still go through.
+   */
+  async checkinBatch(userId: string, orgId: string, eventId: string, items: z.infer<typeof checkinBatchSchema>['items']) {
+    const results = [];
+    for (const item of items) {
+      try {
+        const { registration, replayed } = await this.record(userId, orgId, eventId, item, true);
+        results.push({ clientUuid: item.clientUuid, ok: true as const, replayed, registration });
+      } catch (err) {
+        if (!(err instanceof ProblemException) || (err.status !== 404 && err.status !== 409)) throw err;
+        const registration = (err.extra?.registration as ReturnType<typeof checkinView> | undefined) ?? null;
+        results.push({ clientUuid: item.clientUuid, ok: false as const, code: err.code, registration });
+      }
+    }
+    return { results };
+  }
+
+  /**
+   * What the check-in page keeps on the device to work without a network: confirmed runners only,
+   * with nothing beyond what staff need to hand over the kit. The QR token is sent as a SHA-256 hash
+   * so a copied roster cannot be turned into tickets.
+   */
+  async roster(userId: string, orgId: string, eventId: string) {
+    const { rows } = await this.dbs.pool.query(
+      `SELECT r.id, r.registration_no, r.bib_number, r.first_name_th, r.last_name_th, r.first_name_en, r.last_name_en,
+              r.shirt_size, r.kit_picked_up_at, ra.code AS race_code, encode(sha256(convert_to(r.qr_token, 'UTF8')), 'hex') AS qr_hash,
+              EXISTS (SELECT 1 FROM refunds f WHERE f.registration_id = r.id AND f.status = 'requested') AS refund_pending,
+              now() AS generated_at
+         FROM registrations r
+         JOIN races ra ON ra.id = r.race_id
+        WHERE r.event_id = $1 AND r.status = 'confirmed'
+        ORDER BY ra.sort_order, r.bib_number NULLS LAST, r.registration_no`,
+      [eventId],
+    );
+    await writeAudit(this.dbs.pool, {
+      actorId: userId, organizationId: orgId, eventId, action: 'checkins.roster_download', entityType: 'event', entityId: eventId,
+      after: { rows: rows.length },
+    });
+    return {
+      generatedAt: rows[0]?.generated_at ?? new Date(),
+      items: rows.map((r) => ({
+        id: r.id,
+        registrationNo: r.registration_no,
+        bibNumber: r.bib_number,
+        name: { th: r.first_name_th ? `${r.first_name_th} ${r.last_name_th ?? ''}`.trim() : null, en: `${r.first_name_en} ${r.last_name_en}` },
+        raceCode: r.race_code,
+        shirtSize: r.shirt_size,
+        qrHash: r.qr_hash,
+        kitPickedUpAt: r.kit_picked_up_at,
+        refundPending: r.refund_pending,
+      })),
+    };
+  }
+
+  private async record(userId: string, orgId: string, eventId: string, input: z.infer<typeof checkinSchema>, offline: boolean) {
     return this.dbs.transaction(async (_tx, client) => {
-      const replay = await client.query(
-        `SELECT c.registration_id FROM checkins c JOIN registrations r ON r.id = c.registration_id
-          WHERE c.client_uuid = $1 AND r.event_id = $2`,
-        [input.clientUuid, eventId],
-      );
-      if (replay.rows[0]) return checkinView(await this.findById(client, replay.rows[0].registration_id));
+      const replay = () =>
+        client.query(
+          `SELECT c.registration_id FROM checkins c JOIN registrations r ON r.id = c.registration_id
+            WHERE c.client_uuid = $1 AND r.event_id = $2`,
+          [input.clientUuid, eventId],
+        );
+      const earlier = await replay();
+      if (earlier.rows[0]) return { registration: checkinView(await this.findById(client, earlier.rows[0].registration_id)), replayed: true };
 
       const r = await this.findByCode(eventId, input.code, client, true);
       if (r.status !== 'confirmed') {
@@ -186,22 +253,26 @@ export class OrgRegistrationsService {
         throw new ProblemException(409, 'REFUND_PENDING', 'This runner has asked for a refund; settle it before handing over the kit', undefined, { registration: checkinView(r) });
       }
       if (r.kit_picked_up_at) {
+        // The same request sent twice at once waits on the row lock above, then finds its own pickup.
+        const raced = await replay();
+        if (raced.rows[0]) return { registration: checkinView(r), replayed: true };
         throw new ProblemException(409, 'ALREADY_PICKED_UP', 'This runner has already collected the kit', undefined, { registration: checkinView(r) });
       }
-      await client.query(
+      const inserted = await client.query(
         `INSERT INTO checkins (registration_id, checkin_type, picked_up_by, shirt_size_given, client_uuid, scanned_at)
-         VALUES ($1, 'kit_pickup', $2, $3, $4, now())`,
-        [r.id, input.pickedUpBy, input.shirtSizeGiven, input.clientUuid],
+         VALUES ($1, 'kit_pickup', $2, $3, $4, LEAST(coalesce($5::timestamptz, now()), now()))
+         RETURNING scanned_at`,
+        [r.id, input.pickedUpBy, input.shirtSizeGiven, input.clientUuid, input.scannedAt ?? null],
       );
       const updated = await client.query(
-        'UPDATE registrations SET kit_picked_up_at = now(), updated_at = now() WHERE id = $1 RETURNING kit_picked_up_at',
-        [r.id],
+        'UPDATE registrations SET kit_picked_up_at = $2, updated_at = now() WHERE id = $1 RETURNING kit_picked_up_at',
+        [r.id, inserted.rows[0].scanned_at],
       );
       await writeAudit(client, {
         actorId: userId, organizationId: orgId, eventId, action: 'registration.kit_pickup', entityType: 'registration', entityId: r.id,
-        after: { pickedUpBy: input.pickedUpBy, shirtSizeGiven: input.shirtSizeGiven },
+        after: { pickedUpBy: input.pickedUpBy, shirtSizeGiven: input.shirtSizeGiven, ...(offline ? { offline, scannedAt: inserted.rows[0].scanned_at } : {}) },
       });
-      return checkinView({ ...r, kit_picked_up_at: updated.rows[0].kit_picked_up_at });
+      return { registration: checkinView({ ...r, kit_picked_up_at: updated.rows[0].kit_picked_up_at }), replayed: false };
     });
   }
 
