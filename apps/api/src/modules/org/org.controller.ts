@@ -13,6 +13,7 @@ import {
   shirtsSchema,
   tierFieldsSchema,
 } from './org-events.service';
+import { inviteSchema, memberRoleSchema, OrgMembersService } from './org-members.service';
 import { checkinSchema, listQuerySchema, OrgRegistrationsService } from './org-registrations.service';
 
 const raceCreateSchema = raceFieldsSchema.partial().required({ code: true, nameTh: true, distanceKm: true, capacity: true }).transform((r) => ({
@@ -32,11 +33,16 @@ export class OrgController {
     private readonly events: OrgEventsService,
     private readonly coupons: OrgCouponsService,
     private readonly registrations: OrgRegistrationsService,
+    private readonly members: OrgMembersService,
   ) {}
 
-  /** Organisations the caller belongs to. The web app shows the backoffice link when this is not empty. */
+  /**
+   * Organisations the caller belongs to. The web app shows the backoffice link when this is not empty.
+   * Open invitations for the caller's email are accepted here, so an invited person joins on first visit.
+   */
   @Get()
   async mine(@CurrentUser() user: AuthUser) {
+    await this.members.acceptInvites(user.id);
     const { rows } = await this.dbs.pool.query(
       `SELECT o.id, o.slug, o.name_th, o.status, m.role
          FROM org_members m JOIN organizations o ON o.id = m.organization_id
@@ -45,6 +51,30 @@ export class OrgController {
       [user.id],
     );
     return { items: rows.map((r) => ({ id: r.id, slug: r.slug, nameTh: r.name_th, status: r.status, role: r.role })) };
+  }
+
+  @Get(':orgId/members')
+  async listMembers(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'view');
+    return this.members.list(m.organizationId, user.id);
+  }
+
+  @Post(':orgId/members')
+  async inviteMember(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() body: unknown) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'manage_team');
+    return this.members.invite(user.id, m.organizationId, parse(inviteSchema, body));
+  }
+
+  @Patch(':orgId/members/:memberId')
+  async changeMemberRole(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('memberId') memberId: string, @Body() body: unknown) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'manage_team');
+    return this.members.changeRole(user.id, m.organizationId, parse(uuidSchema, memberId), parse(memberRoleSchema, body).role);
+  }
+
+  @Delete(':orgId/members/:memberId')
+  async removeMember(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('memberId') memberId: string) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'manage_team');
+    return this.members.remove(user.id, m.organizationId, parse(uuidSchema, memberId));
   }
 
   @Get(':orgId/events')

@@ -197,6 +197,7 @@ CREATE TABLE org_members (
   UNIQUE (organization_id, user_id)
 );
 CREATE INDEX idx_org_members_user ON org_members(user_id);
+CREATE UNIQUE INDEX uq_org_members_invite ON org_members(organization_id, invited_email) WHERE accepted_at IS NULL;
 
 CREATE TABLE bank_accounts (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
