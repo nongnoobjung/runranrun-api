@@ -2,12 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { z } from 'zod';
 import { AppConfig, CONFIG } from '../../config';
-import { encryptPii } from '../../common/crypto';
+import { decryptPii, encryptPii } from '../../common/crypto';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { writeAudit } from '../org/org-access.service';
 import { OrgEventsService } from '../org/org-events.service';
 import { OrgFinanceService, OWED, PAID } from '../org/org-finance.service';
+import { documentView, OrgKycService } from '../org/org-kyc.service';
 import { bankSchema } from '../refunds/refunds.service';
 
 export type PlatformRole = 'user' | 'support' | 'finance' | 'admin' | 'superadmin';
@@ -24,6 +25,7 @@ export type AdminPermission = keyof typeof PERMISSIONS;
 export const reviewSchema = z.object({ note: z.string().trim().min(1).max(1000) });
 export const orgListSchema = z.object({ status: z.enum(['pending_kyc', 'active', 'suspended', 'all']).default('all') });
 export const suspendSchema = z.object({ reason: z.string().trim().min(1).max(1000) });
+export const docRejectSchema = z.object({ reason: z.string().trim().min(1).max(500) });
 export const orgSettingsSchema = z.object({ reviewEvents: z.boolean() });
 export const adminBankSchema = bankSchema.extend({ branch: z.string().trim().max(100).optional() });
 export const paidSchema = z.object({ transferRef: z.string().trim().min(1).max(100) });
@@ -40,6 +42,7 @@ export class AdminService {
     private readonly dbs: DbService,
     private readonly events: OrgEventsService,
     private readonly finance: OrgFinanceService,
+    private readonly kyc: OrgKycService,
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -47,8 +50,12 @@ export class AdminService {
   async require(userId: string, permission: AdminPermission): Promise<PlatformRole> {
     const { rows } = await this.dbs.pool.query<{ platform_role: PlatformRole }>('SELECT platform_role FROM users WHERE id = $1', [userId]);
     const role = rows[0]?.platform_role ?? 'user';
-    if (!(PERMISSIONS[permission] as readonly PlatformRole[]).includes(role)) throw problems.forbidden();
+    if (!this.allows(role, permission)) throw problems.forbidden();
     return role;
+  }
+
+  allows(role: PlatformRole, permission: AdminPermission): boolean {
+    return (PERMISSIONS[permission] as readonly PlatformRole[]).includes(role);
   }
 
   async me(userId: string) {
@@ -150,7 +157,8 @@ export class AdminService {
               (SELECT count(*) FROM events e WHERE e.organization_id = o.id)::int AS events,
               (SELECT count(*) FROM events e WHERE e.organization_id = o.id AND e.status = 'pending_review')::int AS pending_review,
               (SELECT count(*) FROM organizer_kyc_documents d WHERE d.organization_id = o.id AND d.status = 'pending')::int AS pending_docs,
-              EXISTS (SELECT 1 FROM bank_accounts b WHERE b.organization_id = o.id AND b.verified_at IS NOT NULL) AS bank_verified
+              EXISTS (SELECT 1 FROM bank_accounts b WHERE b.organization_id = o.id AND b.verified_at IS NOT NULL) AS bank_verified,
+              EXISTS (SELECT 1 FROM bank_accounts b WHERE b.organization_id = o.id AND b.verified_at IS NULL) AS bank_submitted
          FROM organizations o
         WHERE $1 = 'all' OR o.status = $1::org_status
         ORDER BY (o.status = 'pending_kyc') DESC, o.created_at DESC
@@ -172,12 +180,17 @@ export class AdminService {
         pendingReview: o.pending_review as number,
         pendingDocs: o.pending_docs as number,
         bankVerified: o.bank_verified as boolean,
+        bankSubmitted: o.bank_submitted as boolean,
       })),
       counts: Object.fromEntries(counts.rows.map((c) => [c.status, c.n])) as Record<string, number>,
     };
   }
 
-  async organization(orgId: string) {
+  /**
+   * Everything the reviewer checks. The bank account the owner submitted comes with its full number for staff who
+   * may verify it (`revealBank`), to compare against the bank book; everyone else sees the last four digits.
+   */
+  async organization(orgId: string, { revealBank = true }: { revealBank?: boolean } = {}) {
     const { rows } = await this.dbs.pool.query(
       `SELECT o.*, a.email AS approved_by_email FROM organizations o LEFT JOIN users a ON a.id = o.kyc_approved_by WHERE o.id = $1`,
       [orgId],
@@ -191,13 +204,13 @@ export class AdminService {
         [orgId],
       ),
       this.dbs.pool.query(
-        `SELECT id, doc_type, file_url, status, reject_reason, reviewed_at, created_at FROM organizer_kyc_documents
+        `SELECT id, doc_type, file_name, content_type, size_bytes, status, reject_reason, reviewed_at, created_at FROM organizer_kyc_documents
           WHERE organization_id = $1 ORDER BY created_at DESC`,
         [orgId],
       ),
       this.dbs.pool.query(
-        `SELECT bank_code, account_name, account_number_last4, branch, verified_at FROM bank_accounts
-          WHERE organization_id = $1 ORDER BY is_default DESC, created_at LIMIT 1`,
+        `SELECT bank_code, account_name, account_number_last4, account_number_enc, branch, verified_at, created_at FROM bank_accounts
+          WHERE organization_id = $1 AND (is_default OR verified_at IS NULL) ORDER BY created_at DESC`,
         [orgId],
       ),
       this.dbs.pool.query(
@@ -205,7 +218,8 @@ export class AdminService {
         [orgId],
       ),
     ]);
-    const b = bank.rows[0];
+    const b = bank.rows.find((r) => r.verified_at);
+    const submitted = bank.rows.find((r) => !r.verified_at);
     return {
       id: o.id as string,
       slug: o.slug as string,
@@ -216,6 +230,8 @@ export class AdminService {
       contactEmail: o.contact_email as string | null,
       contactPhone: o.contact_phone as string | null,
       websiteUrl: o.website_url as string | null,
+      isVatRegistered: o.is_vat_registered as boolean,
+      address: o.address as Record<string, string> | null,
       status: o.status as 'pending_kyc' | 'active' | 'suspended',
       statusNote: o.status_note as string | null,
       reviewEvents: o.review_events as boolean,
@@ -223,11 +239,18 @@ export class AdminService {
       kycApprovedBy: o.approved_by_email as string | null,
       createdAt: o.created_at as Date,
       members: members.rows.map((m) => ({ email: m.email as string, name: m.display_name as string | null, role: m.role as string, accepted: m.accepted_at !== null })),
-      documents: docs.rows.map((d) => ({
-        id: d.id as string, type: d.doc_type as string, fileUrl: d.file_url as string, status: d.status as string,
-        rejectReason: d.reject_reason as string | null, createdAt: d.created_at as Date,
-      })),
-      bankAccount: b ? { bankCode: b.bank_code as string, accountName: b.account_name as string, accountLast4: b.account_number_last4 as string, branch: b.branch as string | null, verified: b.verified_at !== null } : null,
+      documents: docs.rows.map(documentView),
+      bankAccount: b ? { bankCode: b.bank_code as string, accountName: b.account_name as string, accountLast4: b.account_number_last4 as string, branch: b.branch as string | null, verified: true } : null,
+      submittedBankAccount: submitted
+        ? {
+            bankCode: submitted.bank_code as string,
+            accountName: submitted.account_name as string,
+            accountLast4: submitted.account_number_last4 as string,
+            accountNumber: revealBank ? decryptPii(submitted.account_number_enc, this.config.PII_ENCRYPTION_KEY) : null,
+            branch: submitted.branch as string | null,
+            submittedAt: submitted.created_at as Date,
+          }
+        : null,
       events: events.rows.map((e) => ({ id: e.id as string, nameTh: e.name_th as string, status: e.status as string, eventDate: e.event_date as string })),
     };
   }
@@ -277,19 +300,61 @@ export class AdminService {
     }, input);
   }
 
-  /** Records the bank account checked against the organisation's bank book; payouts go to it. */
+  /**
+   * Records the bank account checked against the organisation's bank book; payouts go to it. It takes the place of
+   * anything the owner submitted.
+   */
   async setBankAccount(actorId: string, orgId: string, input: z.infer<typeof adminBankSchema>) {
     return this.orgChange(actorId, orgId, 'admin.org_bank_account', async (client) => {
+      await client.query('DELETE FROM bank_accounts WHERE organization_id = $1 AND verified_at IS NULL', [orgId]);
       await client.query('UPDATE bank_accounts SET is_default = false WHERE organization_id = $1 AND is_default', [orgId]);
       await client.query(
-        `INSERT INTO bank_accounts (organization_id, bank_code, account_name, account_number_enc, account_number_last4, branch, is_default, verified_at)
-         VALUES ($1, $2, $3, $4, $5, $6, true, now())`,
+        `INSERT INTO bank_accounts (organization_id, bank_code, account_name, account_number_enc, account_number_last4, branch, is_default, verified_at, verified_by)
+         VALUES ($1, $2, $3, $4, $5, $6, true, now(), $7)`,
         [
           orgId, input.bankCode, input.accountName, encryptPii(input.accountNumber, this.config.PII_ENCRYPTION_KEY),
-          input.accountNumber.slice(-4), input.branch ?? null,
+          input.accountNumber.slice(-4), input.branch ?? null, actorId,
         ],
       );
     }, { bankCode: input.bankCode, accountLast4: input.accountNumber.slice(-4) });
+  }
+
+  /** The account the owner submitted matches the bank book: it becomes the one payouts go to. */
+  async verifyBankAccount(actorId: string, orgId: string) {
+    let after: unknown;
+    const result = await this.orgChange(actorId, orgId, 'admin.org_bank_verify', async (client) => {
+      const { rows } = await client.query(
+        'SELECT id, bank_code, account_number_last4 FROM bank_accounts WHERE organization_id = $1 AND verified_at IS NULL FOR UPDATE',
+        [orgId],
+      );
+      if (!rows[0]) throw new ProblemException(409, 'NO_BANK_SUBMISSION', 'The organiser has not submitted a bank account to verify');
+      await client.query('UPDATE bank_accounts SET is_default = false WHERE organization_id = $1 AND is_default', [orgId]);
+      await client.query('UPDATE bank_accounts SET is_default = true, verified_at = now(), verified_by = $2, updated_at = now() WHERE id = $1', [
+        rows[0].id, actorId,
+      ]);
+      after = { bankCode: rows[0].bank_code, accountLast4: rows[0].account_number_last4 };
+    }, () => after);
+    return result;
+  }
+
+  // ---------------------------------------------------------------- KYC documents
+
+  /** One document checked: approved, or sent back with what is wrong so the owner can upload a new one. */
+  async reviewDocument(actorId: string, orgId: string, docId: string, decision: { status: 'approved' } | { status: 'rejected'; reason: string }) {
+    const reason = decision.status === 'rejected' ? decision.reason : null;
+    return this.orgChange(actorId, orgId, decision.status === 'approved' ? 'admin.kyc_doc_approve' : 'admin.kyc_doc_reject', async (client) => {
+      const { rowCount } = await client.query(
+        `UPDATE organizer_kyc_documents SET status = $3, reject_reason = $4, reviewed_by = $5, reviewed_at = now()
+          WHERE id = $1 AND organization_id = $2`,
+        [docId, orgId, decision.status, reason, actorId],
+      );
+      if (!rowCount) throw problems.notFound('Document');
+    }, { documentId: docId, ...decision });
+  }
+
+  /** The document's file for staff who can see the organisation; the view is audited. */
+  async documentFile(actorId: string, orgId: string, docId: string) {
+    return this.kyc.file(actorId, orgId, docId, 'admin.kyc_doc_view');
   }
 
   // ---------------------------------------------------------------- settlements and payouts
@@ -453,12 +518,13 @@ export class AdminService {
     return rows[0].organization_id;
   }
 
+  /** `after` may be a function when what to audit is only known once the change ran. */
   private async orgChange(actorId: string, orgId: string, action: string, change: (client: PoolClient) => Promise<void>, after?: unknown) {
     await this.dbs.transaction(async (_tx, client) => {
       const exists = await client.query('SELECT 1 FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
       if (!exists.rowCount) throw problems.notFound('Organisation');
       await change(client);
-      await writeAudit(client, { actorId, organizationId: orgId, action, entityType: 'organization', entityId: orgId, after });
+      await writeAudit(client, { actorId, organizationId: orgId, action, entityType: 'organization', entityId: orgId, after: typeof after === 'function' ? after() : after });
     });
     return this.organization(orgId);
   }

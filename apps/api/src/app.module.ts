@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AppConfig, CONFIG } from './config';
 import { AuthGuard } from './common/auth';
 import { IdempotencyService } from './common/idempotency.service';
+import { createStorage, FILE_STORAGE } from './common/storage';
 import { DbService } from './db/db.service';
 import { CheckoutController } from './modules/checkout/checkout.controller';
 import { CheckoutService } from './modules/checkout/checkout.service';
@@ -22,6 +23,7 @@ import { OrgBroadcastsService } from './modules/org/org-broadcasts.service';
 import { OrgCouponsService } from './modules/org/org-coupons.service';
 import { OrgEventsService } from './modules/org/org-events.service';
 import { OrgFinanceService } from './modules/org/org-finance.service';
+import { OrgKycService } from './modules/org/org-kyc.service';
 import { OrgMembersService } from './modules/org/org-members.service';
 import { OrgQuestionsService } from './modules/org/org-questions.service';
 import { OrgRegistrationsService } from './modules/org/org-registrations.service';
@@ -83,6 +85,7 @@ export class AppModule {
       providers: [
         { provide: CONFIG, useValue: config },
         gateway,
+        { provide: FILE_STORAGE, useFactory: () => createStorage(config) },
         DbService,
         AuthGuard,
         IdempotencyService,
@@ -100,6 +103,7 @@ export class AppModule {
         OrgCouponsService,
         OrgRegistrationsService,
         OrgMembersService,
+        OrgKycService,
         OrgQuestionsService,
         { provide: EMAIL_SENDER, useClass: FakeEmailSender },
         NotificationsService,
