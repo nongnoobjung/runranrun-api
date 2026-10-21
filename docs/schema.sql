@@ -282,6 +282,7 @@ CREATE TABLE events (
   transfer_deadline   TIMESTAMPTZ,
   allow_race_change   BOOLEAN NOT NULL DEFAULT false,
   race_change_fee_satang BIGINT NOT NULL DEFAULT 0 CHECK (race_change_fee_satang >= 0),
+  race_change_deadline TIMESTAMPTZ,
   allow_refund        BOOLEAN NOT NULL DEFAULT false,
   refund_deadline     TIMESTAMPTZ,
   refund_percent_bps  INTEGER NOT NULL DEFAULT 0 CHECK (refund_percent_bps BETWEEN 0 AND 10000),
@@ -732,10 +733,14 @@ CREATE TABLE transfers (
   fee_order_id          UUID REFERENCES orders(id),
   status                transfer_status NOT NULL DEFAULT 'pending',
   expires_at            TIMESTAMPTZ NOT NULL,
+  runner_payload        JSONB,                  -- ข้อมูลผู้รับโอน ระหว่างรอจ่ายค่าธรรมเนียม
   completed_at          TIMESTAMPTZ,
+  cancelled_at          TIMESTAMPTZ,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX uq_transfers_open ON transfers(from_registration_id) WHERE status IN ('pending', 'accepted');
+CREATE INDEX idx_transfers_to_email ON transfers(to_email) WHERE status IN ('pending', 'accepted');
+CREATE INDEX idx_transfers_fee_order ON transfers(fee_order_id) WHERE fee_order_id IS NOT NULL;
 
 -- เปลี่ยนระยะ
 CREATE TABLE race_changes (
@@ -747,6 +752,7 @@ CREATE TABLE race_changes (
   fee_satang        BIGINT NOT NULL DEFAULT 0 CHECK (fee_satang >= 0),
   order_id          UUID REFERENCES orders(id),  -- order ส่วนต่าง
   refund_id         UUID REFERENCES refunds(id), -- กรณีได้เงินคืน
+  checkout_session_id UUID REFERENCES checkout_sessions(id), -- กันที่ในระยะใหม่ระหว่างรอจ่าย
   status            race_change_status NOT NULL DEFAULT 'pending_payment',
   requested_by      UUID REFERENCES users(id),
   completed_at      TIMESTAMPTZ,
@@ -754,6 +760,8 @@ CREATE TABLE race_changes (
   CHECK (from_race_id <> to_race_id)
 );
 CREATE INDEX idx_race_changes_registration ON race_changes(registration_id);
+CREATE INDEX idx_race_changes_order ON race_changes(order_id) WHERE order_id IS NOT NULL;
+CREATE UNIQUE INDEX uq_race_changes_open ON race_changes(registration_id) WHERE status = 'pending_payment';
 
 CREATE TABLE waitlist_entries (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -35,7 +35,7 @@ export const refundListSchema = z.object({ status: z.enum(['open', 'closed']).de
 const OPEN = ['requested', 'approved', 'processing'];
 
 /** Why a runner cannot ask for their money back right now. */
-type Ineligible = 'NOT_CONFIRMED' | 'REFUND_NOT_ALLOWED' | 'REFUND_CLOSED' | 'ALREADY_PICKED_UP' | 'REFUND_IN_PROGRESS';
+type Ineligible = 'NOT_CONFIRMED' | 'REFUND_NOT_ALLOWED' | 'REFUND_CLOSED' | 'ALREADY_PICKED_UP' | 'REFUND_IN_PROGRESS' | 'TRANSFER_IN_PROGRESS' | 'RACE_CHANGE_IN_PROGRESS';
 
 const QUOTE_SQL = `
   SELECT r.id, r.status, r.registration_no, r.price_paid_satang, r.kit_picked_up_at, r.event_id, r.order_id,
@@ -45,7 +45,10 @@ const QUOTE_SQL = `
          (SELECT p.method FROM payments p WHERE p.order_id = r.order_id AND p.status = 'succeeded' LIMIT 1) AS method,
          (SELECT row_to_json(f) FROM (
             SELECT id, status, amount_satang AS "amountSatang", created_at AS "createdAt", organizer_note AS note
-              FROM refunds WHERE registration_id = r.id ORDER BY created_at DESC LIMIT 1) f) AS last_refund
+              FROM refunds WHERE registration_id = r.id ORDER BY created_at DESC LIMIT 1) f) AS last_refund,
+         EXISTS (SELECT 1 FROM transfers t WHERE t.from_registration_id = r.id AND t.status IN ('pending', 'accepted') AND t.expires_at > now()) AS transfer_open,
+         EXISTS (SELECT 1 FROM race_changes c JOIN orders co ON co.id = c.order_id
+                  WHERE c.registration_id = r.id AND c.status = 'pending_payment' AND co.status = 'pending_payment' AND co.expires_at > now()) AS change_open
     FROM registrations r
     JOIN events e ON e.id = r.event_id
     LEFT JOIN orders o ON o.id = r.order_id`;
@@ -67,7 +70,7 @@ export class RefundsService {
   }
 
   private async loadQuote(userId: string, registrationId: string, db: Pick<PoolClient, 'query'>) {
-    const { rows } = await db.query(`${QUOTE_SQL} WHERE r.id = $2 AND (r.runner_user_id = $1 OR o.buyer_user_id = $1)`, [userId, registrationId]);
+    const { rows } = await db.query(`${QUOTE_SQL} WHERE r.id = $2 AND (r.runner_user_id = $1 OR (o.buyer_user_id = $1 AND r.transferred_from_id IS NULL))`, [userId, registrationId]);
     const r = rows[0];
     if (!r) throw problems.notFound('Registration');
     const paid = Number(r.price_paid_satang);
@@ -79,6 +82,8 @@ export class RefundsService {
     else if (!r.allow_refund || amount === 0) reason = 'REFUND_NOT_ALLOWED';
     else if (new Date(r.refund_until).getTime() <= Date.now()) reason = 'REFUND_CLOSED';
     else if (r.kit_picked_up_at) reason = 'ALREADY_PICKED_UP';
+    else if (r.transfer_open) reason = 'TRANSFER_IN_PROGRESS';
+    else if (r.change_open) reason = 'RACE_CHANGE_IN_PROGRESS';
     const quote = {
       registrationId: r.id as string,
       eligible: reason === null,
@@ -304,6 +309,8 @@ function ineligible(code: Ineligible): ProblemException {
     REFUND_CLOSED: 'The refund period for this event has ended',
     ALREADY_PICKED_UP: 'The kit has already been collected',
     REFUND_IN_PROGRESS: 'A refund for this registration is already in progress',
+    TRANSFER_IN_PROGRESS: 'A transfer is open for this place',
+    RACE_CHANGE_IN_PROGRESS: 'A race change is waiting for payment',
   };
   return new ProblemException(409, code, titles[code]);
 }

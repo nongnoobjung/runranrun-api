@@ -75,8 +75,23 @@ export class OrgRegistrationsService {
         WHERE registration_id = $1 ORDER BY scanned_at`,
       [registrationId],
     );
+    const changes = await this.dbs.pool.query<{ at: Date; kind: 'race_change' | 'transferred_in' | 'transferred_out'; detail: string }>(
+      `SELECT c.completed_at AS at, 'race_change' AS kind, fr.code || ' → ' || tr.code AS detail
+         FROM race_changes c JOIN races fr ON fr.id = c.from_race_id JOIN races tr ON tr.id = c.to_race_id
+        WHERE c.registration_id = $1 AND c.status = 'completed'
+       UNION ALL
+       SELECT t.completed_at, 'transferred_in', 'จาก ' || f.registration_no
+         FROM transfers t JOIN registrations f ON f.id = t.from_registration_id
+        WHERE t.to_registration_id = $1 AND t.status = 'completed'
+       UNION ALL
+       SELECT t.completed_at, 'transferred_out', 'ให้ ' || coalesce(n.registration_no, t.to_email::text)
+         FROM transfers t LEFT JOIN registrations n ON n.id = t.to_registration_id
+        WHERE t.from_registration_id = $1 AND t.status = 'completed'`,
+      [registrationId],
+    );
     const timeline = [
       { at: r.created_at, kind: 'registered' as const, detail: r.order_no },
+      ...changes.rows,
       ...(r.paid_at ? [{ at: r.paid_at, kind: 'paid' as const, detail: String(r.order_total) }] : []),
       ...checkins.rows.map((c) => ({
         at: c.scanned_at,

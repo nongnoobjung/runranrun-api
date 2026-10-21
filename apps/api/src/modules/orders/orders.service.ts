@@ -41,6 +41,17 @@ export interface CreateOrderInput {
 
 const SHIRT_PRODUCT = 'shirt';
 
+/** What a registration keeps about its runner as entered; the ID number only encrypted. */
+export function runnerSnapshot(r: RunnerInput, piiKey: string) {
+  return {
+    firstNameTh: r.firstNameTh ?? null, lastNameTh: r.lastNameTh ?? null, firstNameEn: r.firstNameEn, lastNameEn: r.lastNameEn,
+    gender: r.gender, birthDate: r.birthDate, nationality: r.nationality, idDocType: r.idDocType,
+    idDocLast4: normaliseIdDoc(r.idDocNumber).slice(-4), bloodType: r.bloodType ?? 'unknown',
+    emergencyName: r.emergencyName, emergencyPhone: r.emergencyPhone, email: r.email ?? null, phone: r.phone ?? null,
+    idDocNumberEnc: encryptPii(normaliseIdDoc(r.idDocNumber), piiKey).toString('base64'),
+  };
+}
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -156,13 +167,7 @@ export class OrdersService {
       );
       const regNo = await client.query<{ n: string }>(`SELECT nextval('registration_no_seq') AS n`);
       const r = p.runner;
-      const snapshot = {
-        firstNameTh: r.firstNameTh ?? null, lastNameTh: r.lastNameTh ?? null, firstNameEn: r.firstNameEn, lastNameEn: r.lastNameEn,
-        gender: r.gender, birthDate: r.birthDate, nationality: r.nationality, idDocType: r.idDocType,
-        idDocLast4: normaliseIdDoc(r.idDocNumber).slice(-4), bloodType: r.bloodType ?? 'unknown',
-        emergencyName: r.emergencyName, emergencyPhone: r.emergencyPhone, email: r.email ?? null, phone: r.phone ?? null,
-        idDocNumberEnc: encryptPii(normaliseIdDoc(r.idDocNumber), this.config.PII_ENCRYPTION_KEY).toString('base64'),
-      };
+      const snapshot = runnerSnapshot(r, this.config.PII_ENCRYPTION_KEY);
       const shirt = p.shirtVariantId ? variantPrice.get(p.shirtVariantId) : undefined;
       const ageGroup = await client.query<{ id: string }>(
         `SELECT id FROM age_groups WHERE race_id = $1 AND $2 BETWEEN age_min AND age_max
@@ -243,6 +248,17 @@ export class OrdersService {
          FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [orderId],
     );
+    // A fee or price-difference order pays for a change to a place rather than for new places.
+    const change = await client.query(
+      `SELECT 'race_change' AS kind, c.status::text AS status, c.registration_id, tr.code AS race_code
+         FROM race_changes c JOIN races tr ON tr.id = c.to_race_id WHERE c.order_id = $1
+       UNION ALL
+       SELECT 'transfer', t.status::text, t.to_registration_id, ra.code
+         FROM transfers t JOIN registrations f ON f.id = t.from_registration_id JOIN races ra ON ra.id = f.race_id
+        WHERE t.fee_order_id = $1
+       LIMIT 1`,
+      [orderId],
+    );
     return {
       id: o.id,
       orderNo: o.order_no,
@@ -273,6 +289,9 @@ export class OrdersService {
         bibNumber: r.bib_number,
       })),
       payment: payment.rows[0] ? paymentView(payment.rows[0]) : null,
+      purpose: change.rows[0]
+        ? { kind: change.rows[0].kind as 'race_change' | 'transfer', status: change.rows[0].status as string, registrationId: change.rows[0].registration_id as string | null, raceCode: change.rows[0].race_code as string }
+        : { kind: 'registration' as const },
     };
   }
 

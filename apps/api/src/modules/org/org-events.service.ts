@@ -30,6 +30,16 @@ export const eventFieldsSchema = z.object({
   refundPercentBps: z.number().int().min(0).max(10_000),
   /** Let runners queue for a race once it is full. */
   waitlistEnabled: z.boolean(),
+  allowTransfer: z.boolean(),
+  /** Paid by the person taking the place over. */
+  transferFeeSatang: z.number().int().min(0).max(100_000_00),
+  /** Last moment a transfer can be offered or accepted; null = until race day. */
+  transferDeadline: isoDateTime.nullable(),
+  allowRaceChange: z.boolean(),
+  /** Charged on top of any price difference when moving to another race. */
+  raceChangeFeeSatang: z.number().int().min(0).max(100_000_00),
+  /** Last moment runners may move to another race; null = until race day. */
+  raceChangeDeadline: isoDateTime.nullable(),
 });
 export type EventFields = z.infer<typeof eventFieldsSchema>;
 
@@ -54,6 +64,12 @@ const EVENT_COLUMNS: Record<keyof EventFields, string> = {
   refundDeadline: 'refund_deadline',
   refundPercentBps: 'refund_percent_bps',
   waitlistEnabled: 'waitlist_enabled',
+  allowTransfer: 'allow_transfer',
+  transferFeeSatang: 'transfer_fee_satang',
+  transferDeadline: 'transfer_deadline',
+  allowRaceChange: 'allow_race_change',
+  raceChangeFeeSatang: 'race_change_fee_satang',
+  raceChangeDeadline: 'race_change_deadline',
 };
 
 export const raceFieldsSchema = z.object({
@@ -193,6 +209,8 @@ export class OrgEventsService {
       summaryTh: e.summary_th, descriptionTh: e.description_th, coverImageUrl: e.cover_image_url,
       registrationOpensAt: e.registration_opens_at, registrationClosesAt: e.registration_closes_at, holdMinutes: e.hold_minutes,
       allowRefund: e.allow_refund, refundDeadline: e.refund_deadline, refundPercentBps: e.refund_percent_bps, waitlistEnabled: e.waitlist_enabled,
+      allowTransfer: e.allow_transfer, transferFeeSatang: Number(e.transfer_fee_satang), transferDeadline: e.transfer_deadline,
+      allowRaceChange: e.allow_race_change, raceChangeFeeSatang: Number(e.race_change_fee_satang), raceChangeDeadline: e.race_change_deadline,
       publishedAt: e.published_at, races: raceViews, shirt, readiness,
     };
   }
