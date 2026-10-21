@@ -140,6 +140,24 @@ export class InventoryService {
     }
   }
 
+  /** Gives back only the shirt/add-on holds of a session, e.g. when the runner changes sizes. */
+  async releaseVariantHolds(client: PoolClient, sessionId: string): Promise<void> {
+    const holds = await client.query(
+      `UPDATE inventory_holds SET status = 'released', released_at = now()
+        WHERE checkout_session_id = $1 AND status = 'held' AND product_variant_id IS NOT NULL
+        RETURNING product_variant_id, quantity`,
+      [sessionId],
+    );
+    for (const h of holds.rows) {
+      await client.query('UPDATE product_variants SET reserved = reserved - $2 WHERE id = $1', [h.product_variant_id, h.quantity]);
+    }
+    // Released variant holds are history, not something a late payment should try to re-sell.
+    await client.query(
+      `DELETE FROM inventory_holds WHERE checkout_session_id = $1 AND status = 'released' AND product_variant_id IS NOT NULL`,
+      [sessionId],
+    );
+  }
+
   /** Pushes a session's expiry out (e.g. when a QR code is issued near the end of the hold). */
   async extendSession(client: PoolClient, sessionId: string, minutes: number): Promise<void> {
     await client.query(
