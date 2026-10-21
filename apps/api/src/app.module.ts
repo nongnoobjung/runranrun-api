@@ -36,6 +36,8 @@ import { OmiseGateway } from './modules/payments/omise.gateway';
 import { PaymentConfirmationService } from './modules/payments/payment-confirmation.service';
 import { PaymentsService } from './modules/payments/payments.service';
 import { RefundsService } from './modules/refunds/refunds.service';
+import { ResultsController } from './modules/results/results.controller';
+import { ResultsService } from './modules/results/results.service';
 import { WaitlistService } from './modules/waitlist/waitlist.service';
 import { ChangesService } from './modules/changes/changes.service';
 import { ProfilesService } from './modules/profiles/profiles.service';
@@ -67,6 +69,7 @@ export class AppModule {
     const controllers = [
       HealthController,
       EventsController,
+      ResultsController,
       CheckoutController,
       OrdersController,
       WebhooksController,
@@ -89,6 +92,7 @@ export class AppModule {
         InventoryService,
         HoldReleaseService,
         EventsService,
+        ResultsService,
         CheckoutService,
         OrdersService,
         PaymentsService,
