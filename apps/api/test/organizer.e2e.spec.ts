@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { addOrgMember, createEvent } from '../db/fixtures';
 import { bootApp, buyer, call, fakeThaiId, login, runner, seedEvent, sendFakeWebhook, TestContext, uniqueSlug } from './helpers';
 
@@ -286,6 +286,107 @@ describe('organizer backoffice', () => {
       const res = await call(ctx.app, 'POST', `${ev.base}/checkins`, { token: ev.token, body: { code: reg.registration_no, clientUuid: randomUUID() } });
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({ code: 'NOT_CONFIRMED', registration: { status: 'pending' } });
+    });
+
+    it('downloads a roster for offline check-in with only what the scanner needs', async () => {
+      const ev = await orgEvent('staff');
+      const reg = await paidRegistration(ev, runner({ firstNameTh: 'มานี' }));
+      const refunding = await paidRegistration(ev);
+      const order = (await ctx.pool.query('SELECT order_id FROM registrations WHERE id = $1', [refunding.id])).rows[0].order_id;
+      await ctx.pool.query(`INSERT INTO refunds (order_id, registration_id, amount_satang) VALUES ($1, $2, 100)`, [order, refunding.id]);
+      await pendingRegistration(ev);
+
+      const res = await call(ctx.app, 'GET', `${ev.base}/checkins/roster`, { token: ev.token });
+      expect(res.status).toBe(200);
+      expect(res.body.items).toHaveLength(2);
+      const mine = res.body.items.find((r: any) => r.id === reg.id);
+      expect(mine).toEqual({
+        id: reg.id,
+        registrationNo: reg.registration_no,
+        bibNumber: reg.bib_number,
+        name: { th: expect.stringContaining('มานี'), en: expect.any(String) },
+        raceCode: '10K',
+        shirtSize: 'M',
+        qrHash: createHash('sha256').update(reg.qr_token).digest('hex'),
+        kitPickedUpAt: null,
+        refundPending: false,
+      });
+      expect(res.body.items.find((r: any) => r.id === refunding.id).refundPending).toBe(true);
+      expect(JSON.stringify(res.body)).not.toContain(reg.qr_token);
+      expect(JSON.stringify(res.body)).not.toMatch(/081-234-5678|@/);
+      const audit = await ctx.pool.query(`SELECT after_data FROM audit_logs WHERE action = 'checkins.roster_download' AND entity_id = $1`, [ev.eventId]);
+      expect(audit.rows).toEqual([{ after_data: { rows: 2 } }]);
+
+      const viewerEmail = `viewer-${randomUUID()}@org.example`;
+      await addOrgMember(ctx.pool, ev.organizationId, viewerEmail, 'viewer');
+      const viewer = await login(ctx.app, viewerEmail);
+      expect((await call(ctx.app, 'GET', `${ev.base}/checkins/roster`, { token: viewer.token })).status).toBe(403);
+    });
+
+    it('syncs an offline queue in order, keeps the scan time, and reports each conflict', async () => {
+      const ev = await orgEvent('staff');
+      const fresh = await paidRegistration(ev);
+      const elsewhere = await paidRegistration(ev);
+      const late = await paidRegistration(ev);
+      const refunding = await paidRegistration(ev);
+      const order = (await ctx.pool.query('SELECT order_id FROM registrations WHERE id = $1', [refunding.id])).rows[0].order_id;
+      await ctx.pool.query(`INSERT INTO refunds (order_id, registration_id, amount_satang) VALUES ($1, $2, 100)`, [order, refunding.id]);
+      const { orderId } = await pendingRegistration(ev);
+      const unpaid = (await ctx.pool.query('SELECT registration_no FROM registrations WHERE order_id = $1', [orderId])).rows[0];
+      // Another table checked this runner in while this device was offline.
+      await call(ctx.app, 'POST', `${ev.base}/checkins`, { token: ev.token, body: { code: elsewhere.bib_number, clientUuid: randomUUID() } });
+
+      const scannedAt = '2026-10-01T02:03:04.000Z';
+      const items = [
+        { code: fresh.qr_token, clientUuid: randomUUID(), pickedUpBy: 'แม่', scannedAt },
+        { code: elsewhere.qr_token, clientUuid: randomUUID(), scannedAt },
+        { code: refunding.registration_no, clientUuid: randomUUID() },
+        { code: unpaid.registration_no, clientUuid: randomUUID() },
+        { code: 'NOPE', clientUuid: randomUUID() },
+        // A device clock running ahead counts as now.
+        { code: late.bib_number, clientUuid: randomUUID(), scannedAt: '2099-01-01T00:00:00+07:00' },
+      ];
+      const res = await call(ctx.app, 'POST', `${ev.base}/checkins/batch`, { token: ev.token, body: { items } });
+      expect(res.status).toBe(200);
+      expect(res.body.results.map((r: any) => [r.clientUuid, r.ok, r.code ?? null])).toEqual([
+        [items[0].clientUuid, true, null],
+        [items[1].clientUuid, false, 'ALREADY_PICKED_UP'],
+        [items[2].clientUuid, false, 'REFUND_PENDING'],
+        [items[3].clientUuid, false, 'NOT_CONFIRMED'],
+        [items[4].clientUuid, false, 'REGISTRATION_NOT_FOUND'],
+        [items[5].clientUuid, true, null],
+      ]);
+      expect(res.body.results[0]).toMatchObject({ replayed: false, registration: { id: fresh.id, kitPickedUpAt: scannedAt } });
+      expect(res.body.results[1].registration).toMatchObject({ id: elsewhere.id, kitPickedUpAt: expect.any(String) });
+      expect(new Date(res.body.results[5].registration.kitPickedUpAt).getTime()).toBeLessThanOrEqual(Date.now());
+
+      const checkin = await ctx.pool.query('SELECT picked_up_by, scanned_at FROM checkins WHERE registration_id = $1', [fresh.id]);
+      expect(checkin.rows).toEqual([{ picked_up_by: 'แม่', scanned_at: new Date(scannedAt) }]);
+      const audit = await ctx.pool.query(`SELECT after_data FROM audit_logs WHERE action = 'registration.kit_pickup' AND entity_id = $1`, [fresh.id]);
+      expect(audit.rows[0].after_data).toMatchObject({ offline: true, pickedUpBy: 'แม่' });
+
+      // The connection dropped before the reply arrived: sending the same queue again records nothing new.
+      const again = await call(ctx.app, 'POST', `${ev.base}/checkins/batch`, { token: ev.token, body: { items } });
+      expect(again.body.results.map((r: any) => [r.ok, r.replayed ?? null])).toEqual([
+        [true, true], [false, null], [false, null], [false, null], [false, null], [true, true],
+      ]);
+      const counts = await ctx.pool.query(
+        'SELECT registration_id, count(*)::int AS n FROM checkins WHERE registration_id = ANY($1) GROUP BY 1',
+        [[fresh.id, elsewhere.id, late.id]],
+      );
+      expect(counts.rows.map((r) => r.n)).toEqual([1, 1, 1]);
+
+      // Both copies of one queue sent at once still record each runner once.
+      const twin = await paidRegistration(ev);
+      const item = { code: twin.qr_token, clientUuid: randomUUID() };
+      const [a, b] = await Promise.all([
+        call(ctx.app, 'POST', `${ev.base}/checkins/batch`, { token: ev.token, body: { items: [item] } }),
+        call(ctx.app, 'POST', `${ev.base}/checkins/batch`, { token: ev.token, body: { items: [item] } }),
+      ]);
+      expect([a.body.results[0].ok, b.body.results[0].ok]).toEqual([true, true]);
+      expect((await ctx.pool.query('SELECT count(*)::int AS n FROM checkins WHERE registration_id = $1', [twin.id])).rows[0].n).toBe(1);
+
+      expect((await call(ctx.app, 'POST', `${ev.base}/checkins/batch`, { token: ev.token, body: { items: [] } })).status).toBe(422);
     });
   });
 

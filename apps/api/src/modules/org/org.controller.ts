@@ -22,7 +22,7 @@ import {
 } from './org-events.service';
 import { inviteSchema, memberRoleSchema, OrgMembersService } from './org-members.service';
 import { createQuestionSchema, OrgQuestionsService, questionFieldsSchema, reorderSchema } from './org-questions.service';
-import { checkinSchema, listQuerySchema, OrgRegistrationsService } from './org-registrations.service';
+import { checkinBatchSchema, checkinSchema, listQuerySchema, OrgRegistrationsService } from './org-registrations.service';
 
 const raceCreateSchema = raceFieldsSchema.partial().required({ code: true, nameTh: true, distanceKm: true, capacity: true }).transform((r) => ({
   startAt: null, cutoffMinutes: null, ageMin: null, bibPrefix: null, bibStart: null, bibEnd: null, ...r,
@@ -543,6 +543,19 @@ export class OrgController {
   async checkin(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
     const e = await this.eventAccess(user, orgId, eventId, 'checkin');
     return this.registrations.checkin(user.id, e.organizationId, e.eventId, parse(checkinSchema, body));
+  }
+
+  @Get(':orgId/events/:eventId/checkins/roster')
+  async checkinRoster(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string) {
+    const e = await this.eventAccess(user, orgId, eventId, 'checkin');
+    return this.registrations.roster(user.id, e.organizationId, e.eventId);
+  }
+
+  @Post(':orgId/events/:eventId/checkins/batch')
+  @HttpCode(200)
+  async checkinBatch(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('eventId') eventId: string, @Body() body: unknown) {
+    const e = await this.eventAccess(user, orgId, eventId, 'checkin');
+    return this.registrations.checkinBatch(user.id, e.organizationId, e.eventId, parse(checkinBatchSchema, body).items);
   }
 
   private eventAccess(user: AuthUser, orgId: string, eventId: string, permission: Parameters<OrgAccessService['require']>[2]) {
