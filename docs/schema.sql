@@ -887,6 +887,7 @@ CREATE INDEX idx_results_rank_age ON results(race_id, age_group_code, rank_age_g
 CREATE INDEX idx_results_chip_time ON results(race_id, chip_time_ms) WHERE status = 'FIN';
 CREATE INDEX idx_results_registration ON results(registration_id);
 CREATE INDEX idx_results_name_trgm ON results USING gin (display_name gin_trgm_ops);
+CREATE INDEX idx_results_bib_published ON results(bib_number) WHERE is_published;
 
 CREATE TABLE splits (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
