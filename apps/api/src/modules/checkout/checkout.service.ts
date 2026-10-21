@@ -170,13 +170,14 @@ export class CheckoutService {
 
   async get(userId: string, sessionId: string) {
     const { rows } = await this.dbs.pool.query(
-      `SELECT id, event_id, user_id, status, items, expires_at FROM checkout_sessions WHERE id = $1`,
+      `SELECT s.id, s.event_id, e.slug AS event_slug, s.user_id, s.status, s.items, s.expires_at
+         FROM checkout_sessions s JOIN events e ON e.id = s.event_id WHERE s.id = $1`,
       [sessionId],
     );
     const s = rows[0];
     if (!s || s.user_id !== userId) throw problems.notFound('Checkout session');
     const status = s.status === 'active' && s.expires_at < new Date() ? 'expired' : s.status;
-    return { id: s.id, eventId: s.event_id, status, expiresAt: s.expires_at, items: s.items as SessionItems };
+    return { id: s.id, eventId: s.event_id, eventSlug: s.event_slug as string, status, expiresAt: s.expires_at, items: s.items as SessionItems };
   }
 
   async cancel(userId: string, sessionId: string): Promise<void> {

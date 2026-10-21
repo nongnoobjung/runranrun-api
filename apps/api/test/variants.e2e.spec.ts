@@ -26,6 +26,8 @@ describe('choosing shirt sizes after the places are held', () => {
       body: { eventId: ev.eventId, races: [{ raceId: ev.raceIds['10K'], quantity: 2 }] },
     });
     expect(session.status).toBe(201);
+    const fetched = await call(ctx.app, 'GET', `/v1/checkout/sessions/${session.body.id}`, { token });
+    expect(fetched.body).toMatchObject({ eventSlug: ev.slug, status: 'active' });
     const url = `/v1/checkout/sessions/${session.body.id}/variants`;
 
     const first = await call(ctx.app, 'PUT', url, { token, body: { variants: [{ variantId: ev.variantIds.M, quantity: 2 }] } });
