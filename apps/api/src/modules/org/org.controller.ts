@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
-import { FastifyReply } from 'fastify';
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
+import { ProblemException } from '../../common/problem';
+import { readUpload, sendFile } from '../../common/upload';
 import { parse, uuidSchema } from '../../common/validation';
 import { DbService } from '../../db/db.service';
 import { ChangesService, raceChangeSchema } from '../changes/changes.service';
@@ -20,6 +22,7 @@ import {
   shirtsSchema,
   tierFieldsSchema,
 } from './org-events.service';
+import { companySchema, createOrgSchema, docTypeSchema, KYC_MAX_BYTES, orgBankSchema, OrgKycService } from './org-kyc.service';
 import { inviteSchema, memberRoleSchema, OrgMembersService } from './org-members.service';
 import { createQuestionSchema, OrgQuestionsService, questionFieldsSchema, reorderSchema } from './org-questions.service';
 import { checkinSchema, listQuerySchema, OrgRegistrationsService } from './org-registrations.service';
@@ -50,6 +53,7 @@ export class OrgController {
     private readonly questions: OrgQuestionsService,
     private readonly bibs: OrgBibsService,
     private readonly changes: ChangesService,
+    private readonly kyc: OrgKycService,
   ) {}
 
   /**
@@ -67,6 +71,56 @@ export class OrgController {
       [user.id],
     );
     return { items: rows.map((r) => ({ id: r.id, slug: r.slug, nameTh: r.name_th, status: r.status, role: r.role })) };
+  }
+
+  /** Organiser sign-up: a new team waiting for KYC, with the caller as its owner. */
+  @Post()
+  async createOrganization(@CurrentUser() user: AuthUser, @Body() body: unknown) {
+    return this.kyc.create(user.id, parse(createOrgSchema, body));
+  }
+
+  @Get(':orgId/kyc')
+  async getKyc(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'view');
+    return this.kyc.get(m.organizationId);
+  }
+
+  @Patch(':orgId/kyc')
+  async updateCompany(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() body: unknown) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'manage_kyc');
+    return this.kyc.updateCompany(user.id, m.organizationId, parse(companySchema, body));
+  }
+
+  /** multipart/form-data with `type` (kyc_doc_type) and `file` (PDF, JPG or PNG, at most 10 MB). */
+  @Post(':orgId/kyc/documents')
+  async uploadDocument(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Req() req: FastifyRequest) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'manage_kyc');
+    const { fields, file } = await readUpload(req, KYC_MAX_BYTES);
+    if (!file) throw new ProblemException(422, 'FILE_REQUIRED', 'Attach a file');
+    return this.kyc.upload(user.id, m.organizationId, parse(docTypeSchema, fields.type), file);
+  }
+
+  @Get(':orgId/kyc/documents/:docId/file')
+  async documentFile(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Param('docId') docId: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'view_pii');
+    return sendFile(reply, await this.kyc.file(user.id, m.organizationId, parse(uuidSchema, docId), 'kyc.document_view'));
+  }
+
+  @Delete(':orgId/kyc/documents/:docId')
+  async deleteDocument(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('docId') docId: string) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'manage_kyc');
+    return this.kyc.deleteDocument(user.id, m.organizationId, parse(uuidSchema, docId));
+  }
+
+  @Put(':orgId/bank-account')
+  async submitBankAccount(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() body: unknown) {
+    const m = await this.access.require(user.id, parse(uuidSchema, orgId), 'manage_kyc');
+    return this.kyc.submitBankAccount(user.id, m.organizationId, parse(orgBankSchema, body));
   }
 
   @Get(':orgId/members')

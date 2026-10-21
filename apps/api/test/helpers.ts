@@ -22,6 +22,7 @@ export function testConfig(overrides: Partial<Record<string, string>> = {}): App
     PAYMENT_GATEWAY: 'fake',
     FAKE_GATEWAY_SECRET: FAKE_SECRET,
     ENABLE_DEV_ENDPOINTS: 'true',
+    STORAGE_LOCAL_DIR: process.env.TEST_STORAGE_DIR,
     ...overrides,
   });
 }

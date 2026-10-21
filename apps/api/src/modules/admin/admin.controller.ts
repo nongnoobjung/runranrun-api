@@ -1,7 +1,9 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
+import { FastifyReply } from 'fastify';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
+import { sendFile } from '../../common/upload';
 import { parse, uuidSchema } from '../../common/validation';
-import { adminBankSchema, AdminService, orgListSchema, orgSettingsSchema, paidSchema, reviewSchema, suspendSchema } from './admin.service';
+import { adminBankSchema, AdminService, docRejectSchema, orgListSchema, orgSettingsSchema, paidSchema, reviewSchema, suspendSchema } from './admin.service';
 
 /** The platform's backoffice; every route checks the caller's platform role. */
 @Controller('admin')
@@ -54,8 +56,29 @@ export class AdminController {
 
   @Get('organizations/:id')
   async organization(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const role = await this.admin.require(user.id, 'view');
+    return this.admin.organization(parse(uuidSchema, id), { revealBank: this.admin.allows(role, 'manage_orgs') });
+  }
+
+  @Get('organizations/:id/documents/:docId/file')
+  async documentFile(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('docId') docId: string, @Res({ passthrough: true }) reply: FastifyReply) {
     await this.admin.require(user.id, 'view');
-    return this.admin.organization(parse(uuidSchema, id));
+    return sendFile(reply, await this.admin.documentFile(user.id, parse(uuidSchema, id), parse(uuidSchema, docId)));
+  }
+
+  @Post('organizations/:id/documents/:docId/approve')
+  @HttpCode(200)
+  async approveDocument(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('docId') docId: string) {
+    await this.admin.require(user.id, 'manage_orgs');
+    return this.admin.reviewDocument(user.id, parse(uuidSchema, id), parse(uuidSchema, docId), { status: 'approved' });
+  }
+
+  @Post('organizations/:id/documents/:docId/reject')
+  @HttpCode(200)
+  async rejectDocument(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('docId') docId: string, @Body() body: unknown) {
+    await this.admin.require(user.id, 'manage_orgs');
+    const { reason } = parse(docRejectSchema, body);
+    return this.admin.reviewDocument(user.id, parse(uuidSchema, id), parse(uuidSchema, docId), { status: 'rejected', reason });
   }
 
   @Post('organizations/:id/approve')
@@ -89,6 +112,13 @@ export class AdminController {
   async setBankAccount(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
     await this.admin.require(user.id, 'manage_orgs');
     return this.admin.setBankAccount(user.id, parse(uuidSchema, id), parse(adminBankSchema, body));
+  }
+
+  @Post('organizations/:id/bank-account/verify')
+  @HttpCode(200)
+  async verifyBankAccount(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.require(user.id, 'manage_orgs');
+    return this.admin.verifyBankAccount(user.id, parse(uuidSchema, id));
   }
 
   @Get('payouts')

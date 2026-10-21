@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import multipart from '@fastify/multipart';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
@@ -13,6 +14,8 @@ export async function createApp(config: AppConfig, overrides: { gateway?: Paymen
     // rawBody keeps the exact webhook bytes for signature checks.
     { rawBody: true, logger: config.NODE_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'] },
   );
+  // File uploads (KYC documents); each route sets its own size limit when it reads the parts.
+  await app.register(multipart);
   app.setGlobalPrefix('v1');
   app.useGlobalFilters(new ProblemFilter());
   app.enableShutdownHooks();
