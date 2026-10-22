@@ -48,7 +48,7 @@ export class AdminUsersService {
         WHERE ($1::text IS NULL OR email ILIKE $1 OR display_name ILIKE $1)
           AND ($2 = 'all' OR status::text = $2)
           AND ($3 = 'all' OR ($3 = 'staff' AND platform_role <> 'user') OR platform_role::text = $3)
-        ORDER BY lower(email) = lower($4) DESC, created_at DESC
+        ORDER BY (lower(email) = lower($4)) IS TRUE DESC, created_at DESC
         LIMIT 50`,
       [query.q ? like(query.q) : null, query.status, query.role, query.q ?? ''],
     );

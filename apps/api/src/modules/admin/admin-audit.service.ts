@@ -25,9 +25,11 @@ export const auditQuerySchema = z.object({
 
 const like = (q: string) => q.replace(/[%_\\]/g, '\\$&');
 
-/** Keys whose value is never shown, and keys that are identity or account numbers shown by their last four digits. */
-const HIDDEN = /token|secret|password|otp|hash|cvv|_enc$|Enc$/i;
-const NUMBER = /taxId|tax_id|idNumber|id_number|idDoc|id_doc|nationalId|national_id|citizen|passport|accountNumber|account_number|cardNumber|card_number|phone/i;
+/** Keys whose value is never shown, and keys holding identity, account or phone numbers shown by their last four digits. */
+const HIDDEN = /(^|_)(token|secret|password|otp|hash|cvv|enc)(_|$)/;
+const NUMBER = /(^|_)(tax_id|id_number|id_doc|national_id|citizen_id|passport|account_number|card_number|phone)(_|$)/;
+/** camelCase or snake_case → snake_case words, so `accessToken` and `access_token` read the same. */
+const snake = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 /** Anything that looks like an ID card, tax, phone or account number, whatever its key (a date has eight digits). */
 const looksLikeNumber = (v: string) => /^[\d\s-]+$/.test(v) && v.replace(/\D/g, '').length >= 9;
 
@@ -36,11 +38,12 @@ const lastFour = (v: string) => `••••${v.replace(/\D/g, '').slice(-4)}`;
 /** A copy of what was audited that is safe to show staff: no secrets and no full ID or account numbers. */
 export function redact(value: unknown, key = ''): unknown {
   if (value === null || value === undefined) return value;
-  if (key && HIDDEN.test(key)) return '[ซ่อน]';
+  const k = snake(key);
+  if (k && HIDDEN.test(k)) return '[ซ่อน]';
   if (Array.isArray(value)) return value.map((v) => redact(v, key));
-  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redact(v, k)]));
-  if (typeof value === 'string' && /\d/.test(value) && ((key && NUMBER.test(key)) || looksLikeNumber(value))) return lastFour(value);
-  if (typeof value === 'number' && key && NUMBER.test(key)) return lastFour(String(value));
+  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, v]) => [name, redact(v, name)]));
+  if (typeof value === 'string' && /\d/.test(value) && ((k && NUMBER.test(k)) || looksLikeNumber(value))) return lastFour(value);
+  if (typeof value === 'number' && k && NUMBER.test(k)) return lastFour(String(value));
   return value;
 }
 

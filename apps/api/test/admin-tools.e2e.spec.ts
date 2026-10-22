@@ -184,8 +184,8 @@ describe('admin tools: platform fees, audit log, users', () => {
       expect(JSON.stringify(detail)).not.toMatch(/0105556012341|0812345678|0899999999/);
 
       expect(
-        redact({ accessToken: 'abc', idDocNumber: '1-1001-00012-34-5', bank: { accountNumber: '1234567890' }, note: 'id 1100100012345', date: '2027-01-01', bib: '1234', rows: [{ password: 'x' }] }),
-      ).toEqual({ accessToken: '[ซ่อน]', idDocNumber: '••••2345', bank: { accountNumber: '••••7890' }, note: 'id 1100100012345', date: '2027-01-01', bib: '1234', rows: [{ password: '[ซ่อน]' }] });
+        redact({ accessToken: 'abc', id_doc_number: '1-1001-00012-34-5', bank: { accountNumber: '1234567890' }, note: 'id 1100100012345', date: '2027-01-01', bib: '1234', footprint: 'x', rows: [{ password: 'x' }] }),
+      ).toEqual({ accessToken: '[ซ่อน]', id_doc_number: '••••2345', bank: { accountNumber: '••••7890' }, note: 'id 1100100012345', date: '2027-01-01', bib: '1234', footprint: 'x', rows: [{ password: '[ซ่อน]' }] });
     });
   });
 
