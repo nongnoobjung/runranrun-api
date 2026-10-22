@@ -228,7 +228,8 @@ describe('data retention', () => {
     expect((await ctx.pool.query('SELECT count(*)::int AS n FROM notifications WHERE user_id = $1', [leaving.userId])).rows[0].n).toBe(0);
     expect((await registration(leaving.registrationId)).email).toBeNull();
     expect((await order(leaving.orderId)).buyer_email).toBeNull();
-    expect((await ctx.pool.query('SELECT count(*)::int AS n FROM notifications WHERE user_id = $1', [stillGrace.userId])).rows[0].n).toBe(1);
+    // Still in its grace period: the message seeded above stays (paying also queues its own receipt email now).
+    expect((await ctx.pool.query(`SELECT count(*)::int AS n FROM notifications WHERE user_id = $1 AND template_key = 'order_confirmed'`, [stillGrace.userId])).rows[0].n).toBe(1);
     expect((await registration(stillGrace.registrationId)).email).toBe('runner@example.com');
 
     // KYC files: rejected long ago and a stalled sign-up go (file and row, with an audit entry); the rest stay.
