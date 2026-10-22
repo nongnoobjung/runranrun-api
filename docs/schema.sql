@@ -73,6 +73,7 @@ CREATE TABLE users (
   locale          TEXT NOT NULL DEFAULT 'th' CHECK (locale IN ('th', 'en')),
   platform_role   platform_role NOT NULL DEFAULT 'user',
   status          user_status NOT NULL DEFAULT 'active',
+  status_note     TEXT,                      -- เหตุผลที่แอดมินระงับบัญชี
   email_verified_at TIMESTAMPTZ,
   phone_verified_at TIMESTAMPTZ,
   last_login_at   TIMESTAMPTZ,
@@ -1211,6 +1212,9 @@ CREATE TABLE audit_logs (
 CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id, created_at DESC);
 CREATE INDEX idx_audit_org ON audit_logs(organization_id, created_at DESC);
 CREATE INDEX idx_audit_actor ON audit_logs(actor_id, created_at DESC);
+CREATE INDEX idx_audit_created ON audit_logs(created_at DESC);
+CREATE INDEX idx_audit_event ON audit_logs(event_id, created_at DESC) WHERE event_id IS NOT NULL;
+CREATE INDEX idx_audit_action ON audit_logs(action text_pattern_ops);   -- กรองด้วย prefix เช่น admin.
 
 CREATE TABLE idempotency_keys (
   key             TEXT NOT NULL,

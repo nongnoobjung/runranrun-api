@@ -47,6 +47,9 @@ import { WaitlistService } from './modules/waitlist/waitlist.service';
 import { ChangesService } from './modules/changes/changes.service';
 import { ProfilesService } from './modules/profiles/profiles.service';
 import { AdminController } from './modules/admin/admin.controller';
+import { AdminAuditService } from './modules/admin/admin-audit.service';
+import { AdminFeesService } from './modules/admin/admin-fees.service';
+import { AdminUsersService } from './modules/admin/admin-users.service';
 import { AdminService } from './modules/admin/admin.service';
 import { PrivacyController } from './modules/privacy/privacy.controller';
 import { PrivacyService } from './modules/privacy/privacy.service';
@@ -134,6 +137,9 @@ export class AppModule {
         ChangesService,
         ProfilesService,
         AdminService,
+        AdminFeesService,
+        AdminAuditService,
+        AdminUsersService,
         PrivacyService,
       ],
       exports: [CONFIG, DbService],
