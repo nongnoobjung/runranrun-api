@@ -6,6 +6,7 @@ import { decryptPii, encryptPii } from '../../common/crypto';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { writeAudit } from '../org/org-access.service';
+import { AdminFeesService } from './admin-fees.service';
 import { OrgEventsService } from '../org/org-events.service';
 import { OrgFinanceService, OWED, PAID } from '../org/org-finance.service';
 import { documentView, OrgKycService } from '../org/org-kyc.service';
@@ -19,6 +20,9 @@ const PERMISSIONS = {
   review_events: ['admin', 'superadmin'],
   manage_orgs: ['admin', 'superadmin'],
   payouts: ['finance', 'admin', 'superadmin'],
+  fees: ['finance', 'admin', 'superadmin'],
+  manage_users: ['admin', 'superadmin'],
+  manage_roles: ['superadmin'],
 } as const satisfies Record<string, readonly PlatformRole[]>;
 export type AdminPermission = keyof typeof PERMISSIONS;
 
@@ -43,6 +47,7 @@ export class AdminService {
     private readonly events: OrgEventsService,
     private readonly finance: OrgFinanceService,
     private readonly kyc: OrgKycService,
+    private readonly fees: AdminFeesService,
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -197,7 +202,7 @@ export class AdminService {
     );
     const o = rows[0];
     if (!o) throw problems.notFound('Organisation');
-    const [members, docs, bank, events] = await Promise.all([
+    const [members, docs, bank, events, platformFee] = await Promise.all([
       this.dbs.pool.query(
         `SELECT m.role, m.accepted_at, COALESCE(u.email, m.invited_email)::text AS email, u.display_name
            FROM org_members m LEFT JOIN users u ON u.id = m.user_id WHERE m.organization_id = $1 ORDER BY m.role, m.created_at`,
@@ -217,6 +222,7 @@ export class AdminService {
         `SELECT id, name_th, status, event_date::text AS event_date FROM events WHERE organization_id = $1 ORDER BY event_date DESC LIMIT 50`,
         [orgId],
       ),
+      this.fees.forOrganization(orgId),
     ]);
     const b = bank.rows.find((r) => r.verified_at);
     const submitted = bank.rows.find((r) => !r.verified_at);
@@ -252,6 +258,7 @@ export class AdminService {
           }
         : null,
       events: events.rows.map((e) => ({ id: e.id as string, nameTh: e.name_th as string, status: e.status as string, eventDate: e.event_date as string })),
+      platformFee,
     };
   }
 

@@ -35,7 +35,7 @@ export class DevController {
   async login(@Body() body: unknown) {
     const { email, displayName } = parse(z.object({ email: z.string().email(), displayName: z.string().max(80).optional() }), body);
     const { rows } = await this.dbs.pool.query<{ id: string }>(
-      `INSERT INTO users (email, display_name) VALUES ($1, $2)
+      `INSERT INTO users (email, display_name, last_login_at) VALUES ($1, $2, now())
        ON CONFLICT (email) DO UPDATE SET last_login_at = now()
        RETURNING id`,
       [email, displayName ?? null],
