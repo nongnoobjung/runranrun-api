@@ -3,12 +3,16 @@ import { Queue, Worker } from 'bullmq';
 import { AppConfig, CONFIG } from '../../config';
 import { ChangesService } from '../changes/changes.service';
 import { HoldReleaseService } from '../inventory/hold-release.service';
+import { RetentionService } from '../retention/retention.service';
 import { WaitingRoomService } from '../waiting-room/waiting-room.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 
 const QUEUE = 'maintenance';
 const RELEASE_HOLDS = 'release-expired-holds';
 const ADMIT_QUEUES = 'admit-waiting-rooms';
+/** Its own queue, so a long retention run never holds up releasing checkouts on `maintenance`. */
+const RETENTION_QUEUE = 'data-retention';
+const RETENTION = 'erase-expired-personal-data';
 
 /**
  * Recurring maintenance on BullMQ. Runs only when REDIS_URL is set; a job scheduler keeps exactly
@@ -19,6 +23,8 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly logger = new Logger(JobsService.name);
   private queue?: Queue;
   private worker?: Worker;
+  private retentionQueue?: Queue;
+  private retentionWorker?: Worker;
 
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
@@ -26,6 +32,7 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     private readonly waitlist: WaitlistService,
     private readonly changes: ChangesService,
     private readonly waitingRoom: WaitingRoomService,
+    private readonly retention: RetentionService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -48,11 +55,21 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
       { connection, concurrency: 1 },
     );
     this.worker.on('failed', (job, err) => this.logger.error(`job ${job?.name} failed: ${err.message}`));
+
+    // Once a night, Thai time: erases personal data past its retention period. Keys carry REDIS_KEY_PREFIX like the
+    // rate limits do, so environments sharing one Redis each run it against their own database.
+    const prefix = `${this.config.REDIS_KEY_PREFIX}bull`;
+    this.retentionQueue = new Queue(RETENTION_QUEUE, { connection, prefix });
+    await this.retentionQueue.upsertJobScheduler(RETENTION, { pattern: this.config.RETENTION_SCHEDULE, tz: 'Asia/Bangkok' }, { name: RETENTION });
+    this.retentionWorker = new Worker(RETENTION_QUEUE, async () => this.retention.run(), { connection, prefix, concurrency: 1 });
+    this.retentionWorker.on('failed', (job, err) => this.logger.error(`job ${job?.name} failed: ${err.message}`));
     this.logger.log('maintenance jobs scheduled');
   }
 
   async onApplicationShutdown(): Promise<void> {
     await this.worker?.close();
     await this.queue?.close();
+    await this.retentionWorker?.close();
+    await this.retentionQueue?.close();
   }
 }

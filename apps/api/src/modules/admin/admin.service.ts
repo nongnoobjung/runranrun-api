@@ -19,6 +19,7 @@ const PERMISSIONS = {
   review_events: ['admin', 'superadmin'],
   manage_orgs: ['admin', 'superadmin'],
   payouts: ['finance', 'admin', 'superadmin'],
+  retention: ['admin', 'superadmin'],
 } as const satisfies Record<string, readonly PlatformRole[]>;
 export type AdminPermission = keyof typeof PERMISSIONS;
 

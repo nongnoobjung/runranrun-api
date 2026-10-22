@@ -6,7 +6,7 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   DATABASE_POOL_SIZE: z.coerce.number().int().positive().default(20),
   REDIS_URL: z.string().url().optional(),
-  /** Prepended to the rate limit and waiting room keys, so environments can share one Redis. */
+  /** Prepended to the rate limit, waiting room and data retention job keys, so environments can share one Redis. */
   REDIS_KEY_PREFIX: z.string().default('kao:'),
   JWT_SECRET: z.string().min(32),
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
@@ -56,6 +56,21 @@ const schema = z.object({
   STORAGE_DRIVER: z.enum(['local']).default('local'),
   /** Directory for the local driver, relative to the working directory unless absolute. */
   STORAGE_LOCAL_DIR: z.string().min(1).default('storage'),
+  /**
+   * Data retention (PDPA), see RetentionService. Days after an event's last day before its runners' contact details,
+   * ID number, emergency contact and answers are erased (names, bibs and results stay).
+   */
+  RETENTION_REGISTRATION_DAYS: z.coerce.number().int().min(30).default(365),
+  /** Days after an unpaid order lapsed (or a transfer was not completed) before the details typed into it are erased. */
+  RETENTION_UNPAID_DAYS: z.coerce.number().int().min(1).default(30),
+  /** Days after an account was closed before its remaining traces (sign-ins, messages, registrations' contact details) go. */
+  RETENTION_CLOSED_ACCOUNT_DAYS: z.coerce.number().int().min(0).default(30),
+  /** Days a rejected KYC document, or the documents of a team that stopped its sign-up, are kept. */
+  RETENTION_KYC_DAYS: z.coerce.number().int().min(30).default(180),
+  /** Rows per transaction, so a run never holds many locks at once. */
+  RETENTION_BATCH_SIZE: z.coerce.number().int().min(1).max(10_000).default(500),
+  /** When the retention job runs (cron, Asia/Bangkok). */
+  RETENTION_SCHEDULE: z.string().min(9).default('30 3 * * *'),
   ENABLE_DEV_ENDPOINTS: z
     .enum(['true', 'false'])
     .default('false')

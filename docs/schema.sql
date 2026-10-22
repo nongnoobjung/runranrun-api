@@ -79,8 +79,10 @@ CREATE TABLE users (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at      TIMESTAMPTZ,
+  pii_erased_at   TIMESTAMPTZ,                     -- job retention ลบร่องรอยของบัญชีที่ปิดแล้ว
   CHECK (email IS NOT NULL OR phone IS NOT NULL)
 );
+CREATE INDEX idx_users_closed_kept ON users(deleted_at) WHERE status = 'deleted' AND pii_erased_at IS NULL;
 
 CREATE TABLE auth_identities (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -558,6 +560,7 @@ CREATE TABLE orders (
   cancelled_at        TIMESTAMPTZ,
   settlement_id       UUID,                      -- FK เพิ่มด้านล่าง
   notes               TEXT,
+  pii_erased_at       TIMESTAMPTZ,               -- job retention ลบข้อมูลติดต่อผู้ซื้อแล้ว (ยอดเงินยังอยู่)
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (buyer_user_id, idempotency_key),
@@ -570,6 +573,7 @@ CREATE INDEX idx_orders_buyer ON orders(buyer_user_id, created_at DESC);
 CREATE INDEX idx_orders_pending_expiry ON orders(expires_at) WHERE status = 'pending_payment';
 CREATE INDEX idx_orders_buyer_email ON orders(buyer_email);
 CREATE INDEX idx_orders_unsettled ON orders(organization_id, paid_at) WHERE status = 'paid' AND settlement_id IS NULL;
+CREATE INDEX idx_orders_pii_kept ON orders(event_id) WHERE pii_erased_at IS NULL;
 
 CREATE TABLE order_items (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -687,6 +691,7 @@ CREATE TABLE registrations (
   confirmed_at       TIMESTAMPTZ,
   cancelled_at       TIMESTAMPTZ,
   cancel_reason      TEXT,
+  pii_erased_at      TIMESTAMPTZ,                       -- job retention ลบข้อมูลที่ไม่จำเป็นแล้ว (ชื่อ บิบ ผล ยังอยู่)
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (status <> 'confirmed' OR confirmed_at IS NOT NULL)
@@ -707,6 +712,8 @@ CREATE INDEX idx_registrations_name_th_trgm ON registrations
   USING gin ((coalesce(first_name_th, '') || ' ' || coalesce(last_name_th, '')) gin_trgm_ops);
 CREATE INDEX idx_registrations_not_picked ON registrations(event_id) WHERE status = 'confirmed' AND kit_picked_up_at IS NULL;
 CREATE INDEX idx_registrations_team ON registrations(team_id) WHERE team_id IS NOT NULL;
+CREATE INDEX idx_registrations_pii_kept ON registrations(event_id) WHERE pii_erased_at IS NULL;
+CREATE INDEX idx_registrations_unpaid_kept ON registrations(cancelled_at) WHERE pii_erased_at IS NULL AND confirmed_at IS NULL;
 
 ALTER TABLE order_items
   ADD CONSTRAINT fk_order_items_registration
@@ -764,6 +771,7 @@ CREATE TABLE transfers (
   runner_payload        JSONB,                  -- ข้อมูลผู้รับโอน ระหว่างรอจ่ายค่าธรรมเนียม
   completed_at          TIMESTAMPTZ,
   cancelled_at          TIMESTAMPTZ,
+  pii_erased_at         TIMESTAMPTZ,            -- job retention ลบอีเมลและข้อมูลผู้รับแล้ว
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX uq_transfers_open ON transfers(from_registration_id) WHERE status IN ('pending', 'accepted');

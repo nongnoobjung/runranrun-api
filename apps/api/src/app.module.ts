@@ -49,6 +49,8 @@ import { AdminController } from './modules/admin/admin.controller';
 import { AdminService } from './modules/admin/admin.service';
 import { PrivacyController } from './modules/privacy/privacy.controller';
 import { PrivacyService } from './modules/privacy/privacy.service';
+import { RetentionController } from './modules/retention/retention.controller';
+import { RetentionService } from './modules/retention/retention.service';
 import { WebhooksController } from './modules/payments/webhooks.controller';
 import { WaitingRoomController } from './modules/waiting-room/waiting-room.controller';
 import { WaitingRoomService } from './modules/waiting-room/waiting-room.service';
@@ -87,6 +89,7 @@ export class AppModule {
       OrgController,
       AdminController,
       PrivacyController,
+      RetentionController,
       ...(config.ENABLE_DEV_ENDPOINTS ? [DevController] : []),
     ];
     return {
@@ -133,6 +136,7 @@ export class AppModule {
         ProfilesService,
         AdminService,
         PrivacyService,
+        RetentionService,
       ],
       exports: [CONFIG, DbService],
     };
