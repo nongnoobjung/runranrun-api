@@ -32,7 +32,8 @@ describe('transactional email templates', () => {
     expect(renderTemplate('waitlist_offer', v, 'en', 'https://kao.run').subject).toBe('A place is yours: วิ่งริมน้ำ 10K');
   });
 
-  it('formats money and finishing times', () => {
+  it('formats money, dates (Gregorian years in Thai too) and finishing times', () => {
+    expect(renderTemplate('order_paid', samples.order_paid, 'th', 'https://kao.run').text).toContain('2027');
     expect(renderTemplate('order_paid', samples.order_paid, 'en', 'https://kao.run').text).toContain('฿1,927.80');
     expect(renderTemplate('results_published', samples.results_published, 'th', 'https://kao.run').text).toContain('เวลา 0:52:10 · อันดับ 3');
   });

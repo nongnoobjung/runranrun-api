@@ -54,14 +54,15 @@ export function baht(satang: number, locale: Locale): string {
   return `฿${n}`;
 }
 
+// Thai keeps the Gregorian year, as on the website.
 function dateTime(iso: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === 'th' ? 'th-TH' : 'en-GB', {
+  return new Intl.DateTimeFormat(locale === 'th' ? 'th-TH-u-ca-gregory' : 'en-GB', {
     dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok',
   }).format(new Date(iso));
 }
 
 function date(iso: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === 'th' ? 'th-TH' : 'en-GB', { dateStyle: 'long', timeZone: 'Asia/Bangkok' }).format(new Date(`${iso}T12:00:00+07:00`));
+  return new Intl.DateTimeFormat(locale === 'th' ? 'th-TH-u-ca-gregory' : 'en-GB', { dateStyle: 'long', timeZone: 'Asia/Bangkok' }).format(new Date(`${iso}T12:00:00+07:00`));
 }
 
 function duration(ms: number): string {
