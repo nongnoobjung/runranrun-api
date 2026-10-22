@@ -87,6 +87,9 @@ describe('receipts and tax invoices', () => {
     // Opening it again shows the same document.
     expect((await receipt(o.token, o.orderId)).body.document.id).toBe(res.body.document.id);
     expect((await receipt((await login(ctx.app)).token, o.orderId)).status).toBe(404);
+    // The buyer's ticket links to it.
+    const [ticket] = (await call(ctx.app, 'GET', '/v1/me/registrations', { token: o.token })).body.items;
+    expect(ticket.receiptOrderId).toBe(o.orderId);
   });
 
   it("numbers each VAT-registered organiser's documents from 1 and works out the VAT inside the price", async () => {
