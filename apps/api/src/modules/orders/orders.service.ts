@@ -8,6 +8,7 @@ import { SessionItems } from '../checkout/checkout.service';
 import { checkAnswers, loadQuestions } from '../org/org-questions.service';
 import { ConsentContext, OrderConsents, recordOrderConsents } from '../privacy/privacy.service';
 import { runnerFromProfile, saveRunnerProfile } from '../profiles/profiles.service';
+import { Billing } from '../receipts/receipts.service';
 import { ageOn, computeTotals, CouponRule, platformFee, PlatformFeePlan, PricedLine } from './pricing';
 
 export interface RunnerInput {
@@ -31,7 +32,7 @@ export interface CreateOrderInput {
   checkoutSessionId: string;
   couponCode?: string;
   buyer: { name: string; email: string; phone: string };
-  billing?: Record<string, unknown>;
+  billing?: Billing;
   participants: {
     raceId: string;
     shirtVariantId?: string;

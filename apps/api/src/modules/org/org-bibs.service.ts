@@ -5,6 +5,7 @@ import { parseCsv } from '../../common/csv';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { assignNextBib } from '../bibs/next-bib';
+import { queueBibAssigned } from '../notifications/emails';
 import { writeAudit } from './org-access.service';
 
 /** Bibs are printed, so keep them short: letters, digits and dashes. Stored upper case. */
@@ -96,6 +97,7 @@ export class OrgBibsService {
             actorId: userId, organizationId: orgId, eventId, action: 'bib.set', entityType: 'registration', entityId: registrationId,
             before: { bibNumber: reg.bib_number }, after: { bibNumber },
           });
+          if (bibNumber) await queueBibAssigned(client, registrationId, reg.bib_number);
         }
         return { id: registrationId, bibNumber };
       });
@@ -118,8 +120,10 @@ export class OrgBibsService {
       for (const r of rows) {
         if (full.has(r.race_id)) continue;
         const bib = await assignNextBib(client, { id: r.id, raceId: r.race_id, eventId }, false);
-        if (bib) assigned += 1;
-        else full.add(r.race_id); // no range, or it ran out: the rest of this race stays waiting
+        if (bib) {
+          assigned += 1;
+          await queueBibAssigned(client, r.id, null);
+        } else full.add(r.race_id); // no range, or it ran out: the rest of this race stays waiting
       }
       await writeAudit(client, { actorId: userId, organizationId: orgId, eventId, action: 'bibs.assign', entityType: 'event', entityId: eventId, after: { raceId: raceId ?? null, assigned } });
       return { assigned, ...(await this.overview(eventId, client)) };
@@ -185,6 +189,7 @@ export class OrgBibsService {
           actorId: userId, organizationId: orgId, eventId, action: 'bibs.import', entityType: 'event', entityId: eventId,
           after: { changes: changes.map((c) => ({ registrationNo: c.registrationNo, from: c.from, to: c.to })) },
         });
+        for (const c of changes) await queueBibAssigned(client, c.id, c.from);
         return { ...result, applied: true };
       });
     } catch (err) {

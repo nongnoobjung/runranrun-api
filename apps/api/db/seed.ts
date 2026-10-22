@@ -24,6 +24,14 @@ async function main(): Promise<void> {
     // Images go where the API keeps files (the same STORAGE_* settings as the API's .env).
     const storage = createStorage({ STORAGE_DRIVER: 'local', STORAGE_LOCAL_DIR: process.env.STORAGE_LOCAL_DIR || 'storage' });
     if (await seedRiversideContent(pool, storage, eventId)) console.log('event page: Thai and English description, rules, cover and gallery');
+    // Company and VAT details, so paid orders get the organiser's own tax invoices (receipts.service.ts).
+    const company = await pool.query(
+      `UPDATE organizations SET legal_name = 'บริษัท ริเวอร์ไซด์ สปอร์ต จำกัด', tax_id = '0105556123453', is_vat_registered = true,
+              address = '{"line1": "88 ถนนเจริญกรุง", "subdistrict": "บางรัก", "district": "บางรัก", "province": "กรุงเทพมหานคร", "postcode": "10500"}'
+        WHERE id = $1 AND legal_name IS NULL`,
+      [organizationId],
+    );
+    if (company.rowCount) console.log('organiser company details: VAT registered, issues its own tax invoices');
     await addOrgMember(pool, organizationId, RIVERSIDE_ORGANIZER_EMAIL, 'owner');
     console.log(`organizer login: ${RIVERSIDE_ORGANIZER_EMAIL} (owner of the organisation)`);
     await setPlatformRole(pool, ADMIN_EMAIL, 'superadmin');

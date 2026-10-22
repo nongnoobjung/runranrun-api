@@ -1010,11 +1010,12 @@ CREATE TABLE notifications (
   channel          notification_channel NOT NULL,
   template_key     TEXT NOT NULL,            -- order_confirmed, bib_assigned, results_published ...
   recipient        TEXT NOT NULL,            -- email / LINE userId / เบอร์
-  payload          JSONB NOT NULL DEFAULT '{}',
+  payload          JSONB NOT NULL DEFAULT '{}',   -- broadcast: { subject, text }; transactional: { locale, vars }
   status           notification_status NOT NULL DEFAULT 'queued',
   provider_msg_id  TEXT,
   attempts         SMALLINT NOT NULL DEFAULT 0,
   last_error       TEXT,
+  next_attempt_at  TIMESTAMPTZ,              -- ส่งไม่สำเร็จ: ลองใหม่หลังเวลานี้ (สูงสุด 5 ครั้ง)
   dedupe_key       TEXT UNIQUE,              -- กันส่งซ้ำ
   sent_at          TIMESTAMPTZ,
   read_at          TIMESTAMPTZ,
@@ -1023,6 +1024,8 @@ CREATE TABLE notifications (
 CREATE INDEX idx_notifications_user ON notifications(user_id, created_at DESC);
 CREATE INDEX idx_notifications_queue ON notifications(created_at) WHERE status = 'queued';
 CREATE INDEX idx_notifications_broadcast ON notifications(broadcast_id) WHERE broadcast_id IS NOT NULL;
+CREATE INDEX idx_notifications_transactional ON notifications(created_at)
+  WHERE status = 'queued' AND broadcast_id IS NULL;
 
 -- =====================================================================
 -- PDPA CONSENTS
@@ -1060,16 +1063,19 @@ CREATE TABLE data_subject_requests (
 -- =====================================================================
 -- FINANCE: TAX INVOICES / SETTLEMENTS / PAYOUTS
 -- =====================================================================
+-- ใบเสร็จ / ใบกำกับภาษี: ทุกคำสั่งซื้อที่ชำระแล้วมี 1 ฉบับที่มีผล (status = 'issued')
+-- เลขที่รันต่อผู้ออกต่อปี ไม่ข้ามไม่ซ้ำ (document_counters ในทรานแซกชันเดียวกับการชำระเงิน)
+-- ผู้จัดที่มีชื่อนิติบุคคล + เลขผู้เสียภาษีเป็นผู้ออก ไม่อย่างนั้นแพลตฟอร์มออกในนามผู้จัด
 CREATE TABLE tax_invoices (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  invoice_no       TEXT NOT NULL UNIQUE,
+  invoice_no       TEXT NOT NULL,                       -- RC2026-000123 ไม่ซ้ำภายในผู้ออกเดียวกัน
   order_id         UUID NOT NULL REFERENCES orders(id),
   issuer_org_id    UUID REFERENCES organizations(id),   -- NULL = แพลตฟอร์มเป็นผู้ออก
   status           tax_invoice_status NOT NULL DEFAULT 'issued',
   buyer_name       TEXT NOT NULL,
   buyer_tax_id     TEXT,
-  buyer_branch     TEXT,                                -- สำนักงานใหญ่ / สาขาที่
-  buyer_address    TEXT NOT NULL,
+  buyer_branch     TEXT,                                -- 00000 = สำนักงานใหญ่, เลขสาขา 5 หลัก, NULL = บุคคลธรรมดา
+  buyer_address    TEXT NOT NULL,                       -- '' สำหรับใบเสร็จที่ไม่ระบุที่อยู่
   subtotal_satang  BIGINT NOT NULL CHECK (subtotal_satang >= 0),
   vat_satang       BIGINT NOT NULL DEFAULT 0 CHECK (vat_satang >= 0),
   total_satang     BIGINT NOT NULL CHECK (total_satang >= 0),
@@ -1078,10 +1084,25 @@ CREATE TABLE tax_invoices (
   replaces_id      UUID REFERENCES tax_invoices(id),
   issued_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   cancelled_at     TIMESTAMPTZ,
+  doc_type         TEXT NOT NULL DEFAULT 'receipt'
+                   CHECK (doc_type IN ('receipt', 'abbreviated_tax_invoice', 'tax_invoice')),
+  doc_year         SMALLINT NOT NULL,
+  doc_seq          INTEGER NOT NULL CHECK (doc_seq >= 0),
+  issuer_snapshot  JSONB NOT NULL DEFAULT '{}',         -- { name, taxId, branch, address, vatRegistered } ณ วันที่ออก
   CHECK (total_satang = subtotal_satang + vat_satang),
   CHECK (buyer_tax_id IS NULL OR buyer_tax_id ~ '^[0-9]{13}$')
 );
 CREATE INDEX idx_tax_invoices_order ON tax_invoices(order_id);
+CREATE UNIQUE INDEX uq_tax_invoices_issuer_no
+  ON tax_invoices ((COALESCE(issuer_org_id, '00000000-0000-0000-0000-000000000000'::uuid)), invoice_no);
+CREATE UNIQUE INDEX uq_tax_invoices_order_issued ON tax_invoices(order_id) WHERE status = 'issued';
+
+CREATE TABLE document_counters (
+  issuer_key TEXT NOT NULL,                -- organization id หรือ 'platform'
+  doc_year   SMALLINT NOT NULL,
+  last_no    INTEGER NOT NULL CHECK (last_no > 0),
+  PRIMARY KEY (issuer_key, doc_year)
+);
 
 -- สรุปยอดต่อรอบ ต่อผู้จัด (ต่องาน)
 CREATE TABLE settlements (

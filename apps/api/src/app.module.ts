@@ -39,6 +39,7 @@ import { PAYMENT_GATEWAY, PaymentGateway } from './modules/payments/gateway';
 import { OmiseGateway } from './modules/payments/omise.gateway';
 import { PaymentConfirmationService } from './modules/payments/payment-confirmation.service';
 import { PaymentsService } from './modules/payments/payments.service';
+import { ReceiptsService } from './modules/receipts/receipts.service';
 import { RefundsService } from './modules/refunds/refunds.service';
 import { ResultsController } from './modules/results/results.controller';
 import { ResultsService } from './modules/results/results.service';
@@ -115,6 +116,7 @@ export class AppModule {
         OrdersService,
         PaymentsService,
         PaymentConfirmationService,
+        ReceiptsService,
         JobsService,
         OrgAccessService,
         OrgEventsService,
