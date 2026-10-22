@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
@@ -17,7 +17,7 @@ const REGISTRATION_SQL = `
          r.first_name_th, r.last_name_th, r.kit_picked_up_at, r.age_on_race_day,
          ra.code AS race_code, ra.distance_km, ra.start_at, ra.cutoff_minutes,
          e.slug AS event_slug, e.name_th AS event_name, e.event_date::text AS event_date, e.venue_name, e.cover_image_url,
-         o.order_no, ag.code AS age_group
+         o.order_no, CASE WHEN o.buyer_user_id = $1 AND o.paid_at IS NOT NULL THEN o.id END AS receipt_order_id, ag.code AS age_group
     FROM registrations r
     JOIN races ra ON ra.id = r.race_id
     JOIN events e ON e.id = r.event_id
@@ -38,6 +38,14 @@ export class MeController {
     private readonly results: ResultsService,
     private readonly rateLimit: RateLimitService,
   ) {}
+
+  /** The language the site is shown in; emails to this account follow it. */
+  @Put('locale')
+  async setLocale(@CurrentUser() user: AuthUser, @Body() body: unknown) {
+    const { locale } = parse(z.object({ locale: z.enum(['th', 'en']) }), body);
+    await this.dbs.pool.query('UPDATE users SET locale = $2, updated_at = now() WHERE id = $1 AND locale <> $2', [user.id, locale]);
+    return { locale };
+  }
 
   @Get('registrations')
   async registrations(@CurrentUser() user: AuthUser) {
@@ -174,5 +182,7 @@ function view(r: Record<string, any>) {
     race: { code: r.race_code, distanceKm: Number(r.distance_km), startAt: r.start_at, cutoffMinutes: r.cutoff_minutes },
     event: { slug: r.event_slug, name: r.event_name, eventDate: r.event_date, venue: r.venue_name, coverImageUrl: r.cover_image_url },
     orderNo: r.order_no,
+    /** The order whose receipt this user can open (they paid for it), else null. */
+    receiptOrderId: r.receipt_order_id ?? null,
   };
 }

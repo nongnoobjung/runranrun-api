@@ -7,6 +7,7 @@ import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
+import { queueRefundEmail } from '../notifications/emails';
 import { writeAudit } from '../org/org-access.service';
 
 export const BANKS = ['KBANK', 'SCB', 'BBL', 'KTB', 'BAY', 'TTB', 'GSB', 'KKP', 'CIMBT', 'UOBT', 'LHBANK', 'BAAC'] as const;
@@ -160,6 +161,7 @@ export class RefundsService {
       await this.giveUpPlace(client, f.registration_id, 'refunded', `refund: ${f.reason ?? ''}`.trim(), Number(f.amount_satang));
       await client.query(`UPDATE refunds SET status = 'approved', approved_by = $2, updated_at = now() WHERE id = $1`, [refundId, userId]);
       await writeAudit(client, { actorId: userId, organizationId: orgId, eventId, action: 'refund.approve', entityType: 'refund', entityId: refundId });
+      await queueRefundEmail(client, refundId, 'refund_approved');
       return { id: refundId, status: 'approved' };
     });
     // The freed place goes to the race's waitlist first.
@@ -172,6 +174,7 @@ export class RefundsService {
       await this.lockRefund(client, eventId, refundId, 'requested');
       await client.query(`UPDATE refunds SET status = 'rejected', organizer_note = $2, approved_by = $3, updated_at = now() WHERE id = $1`, [refundId, note, userId]);
       await writeAudit(client, { actorId: userId, organizationId: orgId, eventId, action: 'refund.reject', entityType: 'refund', entityId: refundId, after: { note } });
+      await queueRefundEmail(client, refundId, 'refund_rejected');
       return { id: refundId, status: 'rejected' };
     });
   }
@@ -185,6 +188,7 @@ export class RefundsService {
         [refundId, reference],
       );
       await writeAudit(client, { actorId: userId, organizationId: orgId, eventId, action: 'refund.transferred', entityType: 'refund', entityId: refundId, after: { reference } });
+      await queueRefundEmail(client, refundId, 'refund_transferred');
       return { id: refundId, status: 'succeeded' };
     });
   }
@@ -217,6 +221,7 @@ export class RefundsService {
             [r.order_id, r.payment_id, registrationId, input.refundSatang, input.reason, userId],
           );
           refundId = ins.rows[0].id;
+          await queueRefundEmail(client, refundId, 'refund_approved');
         }
         await writeAudit(client, {
           actorId: userId, organizationId: orgId, eventId, action: 'registration.cancel', entityType: 'registration', entityId: registrationId,

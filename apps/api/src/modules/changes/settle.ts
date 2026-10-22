@@ -1,5 +1,6 @@
 import { PoolClient } from 'pg';
 import { assignNextBib } from '../bibs/next-bib';
+import { queueRaceChangeCompleted, queueTransferCompleted } from '../notifications/emails';
 import { writeAudit } from '../org/org-access.service';
 
 /** The recipient's details as checked at acceptance, ready to become their registration. */
@@ -126,6 +127,7 @@ export async function completeTransfer(client: PoolClient, transferId: string): 
     actorId: t.to_user_id, organizationId: t.organization_id, eventId: t.event_id, action: 'transfer.complete',
     entityType: 'registration', entityId: toRegistrationId, after: { from: t.from_registration_id, transferId },
   });
+  await queueTransferCompleted(client, transferId);
   return true;
 }
 
@@ -181,5 +183,6 @@ export async function completeRaceChange(client: PoolClient, raceChangeId: strin
     actorId: actorId ?? c.requested_by, organizationId: c.organization_id, eventId: c.event_id, action: 'registration.race_change',
     entityType: 'registration', entityId: c.registration_id, after: { fromRaceId: c.from_race_id, toRaceId: c.to_race_id, bib },
   });
+  await queueRaceChangeCompleted(client, raceChangeId);
   return true;
 }

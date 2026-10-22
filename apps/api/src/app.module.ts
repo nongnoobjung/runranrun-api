@@ -39,6 +39,7 @@ import { PAYMENT_GATEWAY, PaymentGateway } from './modules/payments/gateway';
 import { OmiseGateway } from './modules/payments/omise.gateway';
 import { PaymentConfirmationService } from './modules/payments/payment-confirmation.service';
 import { PaymentsService } from './modules/payments/payments.service';
+import { ReceiptsService } from './modules/receipts/receipts.service';
 import { RefundsService } from './modules/refunds/refunds.service';
 import { ResultsController } from './modules/results/results.controller';
 import { ResultsService } from './modules/results/results.service';
@@ -46,6 +47,9 @@ import { WaitlistService } from './modules/waitlist/waitlist.service';
 import { ChangesService } from './modules/changes/changes.service';
 import { ProfilesService } from './modules/profiles/profiles.service';
 import { AdminController } from './modules/admin/admin.controller';
+import { AdminAuditService } from './modules/admin/admin-audit.service';
+import { AdminFeesService } from './modules/admin/admin-fees.service';
+import { AdminUsersService } from './modules/admin/admin-users.service';
 import { AdminService } from './modules/admin/admin.service';
 import { PrivacyController } from './modules/privacy/privacy.controller';
 import { PrivacyService } from './modules/privacy/privacy.service';
@@ -115,6 +119,7 @@ export class AppModule {
         OrdersService,
         PaymentsService,
         PaymentConfirmationService,
+        ReceiptsService,
         JobsService,
         OrgAccessService,
         OrgEventsService,
@@ -135,6 +140,9 @@ export class AppModule {
         ChangesService,
         ProfilesService,
         AdminService,
+        AdminFeesService,
+        AdminAuditService,
+        AdminUsersService,
         PrivacyService,
         RetentionService,
       ],

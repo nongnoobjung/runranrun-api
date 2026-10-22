@@ -1,4 +1,4 @@
-import { Body, Controller, Inject, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Query } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -10,6 +10,8 @@ import { DbService } from '../../db/db.service';
 import { HoldReleaseService } from '../inventory/hold-release.service';
 import { FAKE_SIGNATURE_HEADER, fakeChargeCompleteBody, signFakeWebhook } from '../payments/fake.gateway';
 import { PAYMENT_GATEWAY, PaymentGateway } from '../payments/gateway';
+import { NotificationsService } from '../notifications/notifications.service';
+import { isTemplateKey, renderTemplate, TemplateKey, TemplateVars } from '../notifications/templates';
 import { PaymentConfirmationService } from '../payments/payment-confirmation.service';
 import { WaitingRoomService } from '../waiting-room/waiting-room.service';
 
@@ -25,6 +27,7 @@ export class DevController {
     private readonly holds: HoldReleaseService,
     private readonly confirmation: PaymentConfirmationService,
     private readonly waitingRoom: WaitingRoomService,
+    private readonly notifications: NotificationsService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
@@ -35,7 +38,7 @@ export class DevController {
   async login(@Body() body: unknown) {
     const { email, displayName } = parse(z.object({ email: z.string().email(), displayName: z.string().max(80).optional() }), body);
     const { rows } = await this.dbs.pool.query<{ id: string }>(
-      `INSERT INTO users (email, display_name) VALUES ($1, $2)
+      `INSERT INTO users (email, display_name, last_login_at) VALUES ($1, $2, now())
        ON CONFLICT (email) DO UPDATE SET last_login_at = now()
        RETURNING id`,
       [email, displayName ?? null],
@@ -102,6 +105,31 @@ export class DevController {
   async admitQueue(@Param('eventId') eventId: string, @Body() body: unknown) {
     const { count } = parse(z.object({ count: z.number().int().min(1).max(10_000).default(10_000) }), body ?? {});
     return { admitted: await this.waitingRoom.admitNow(parse(z.string().uuid(), eventId), count) };
+  }
+
+  /**
+   * The transactional emails queued for an address, newest first, as they read when sent. There is no real email
+   * provider yet; this is how end-to-end tests (and people) see what a runner would receive.
+   */
+  @Get('emails')
+  async emails(@Query('to') to: string) {
+    await this.notifications.flush();
+    const { rows } = await this.dbs.pool.query(
+      `SELECT template_key, status, payload, created_at FROM notifications
+        WHERE recipient = $1 AND broadcast_id IS NULL ORDER BY created_at DESC LIMIT 50`,
+      [parse(z.string().email(), to)],
+    );
+    return {
+      items: rows.map((n) => ({
+        template: n.template_key as string,
+        status: n.status as string,
+        locale: n.payload.locale as string,
+        createdAt: n.created_at as Date,
+        ...(isTemplateKey(n.template_key)
+          ? renderTemplate(n.template_key as TemplateKey, n.payload.vars as TemplateVars[TemplateKey], n.payload.locale === 'en' ? 'en' : 'th', this.config.PUBLIC_WEB_URL)
+          : { subject: n.payload.subject as string, text: n.payload.text as string }),
+      })),
+    };
   }
 
   @Post('jobs/release-expired-holds')

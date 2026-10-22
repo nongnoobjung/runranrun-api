@@ -1,15 +1,24 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
+import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
 import { sendFile } from '../../common/upload';
 import { parse, uuidSchema } from '../../common/validation';
+import { AdminAuditService, auditQuerySchema } from './admin-audit.service';
+import { AdminFeesService, feeSchema } from './admin-fees.service';
+import { AdminUsersService, userListSchema, userRoleSchema } from './admin-users.service';
 import { adminBankSchema, AdminService, docRejectSchema, orgListSchema, orgSettingsSchema, paidSchema, reviewSchema, suspendSchema } from './admin.service';
 
 /** The platform's backoffice; every route checks the caller's platform role. */
 @Controller('admin')
 @UseGuards(AuthGuard)
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly fees: AdminFeesService,
+    private readonly audit: AdminAuditService,
+    private readonly users: AdminUsersService,
+  ) {}
 
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
@@ -152,5 +161,73 @@ export class AdminController {
   async voidSettlement(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     await this.admin.require(user.id, 'payouts');
     return this.admin.voidSettlement(user.id, parse(uuidSchema, id));
+  }
+
+  @Get('platform-fees')
+  async platformFees(@CurrentUser() user: AuthUser) {
+    await this.admin.require(user.id, 'fees');
+    return this.fees.list();
+  }
+
+  @Put('platform-fees/default')
+  async setDefaultFee(@CurrentUser() user: AuthUser, @Body() body: unknown) {
+    await this.admin.require(user.id, 'fees');
+    return this.fees.set(user.id, null, parse(feeSchema, body));
+  }
+
+  @Put('organizations/:id/platform-fee')
+  async setOrganizationFee(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    await this.admin.require(user.id, 'fees');
+    return this.fees.set(user.id, parse(uuidSchema, id), parse(feeSchema, body));
+  }
+
+  @Delete('organizations/:id/platform-fee')
+  async clearOrganizationFee(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.require(user.id, 'fees');
+    return this.fees.clear(user.id, parse(uuidSchema, id));
+  }
+
+  @Get('audit')
+  async auditLog(@CurrentUser() user: AuthUser, @Query() query: unknown) {
+    await this.admin.require(user.id, 'view');
+    return this.audit.list(parse(auditQuerySchema, query));
+  }
+
+  @Get('audit/:id')
+  async auditEntry(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.require(user.id, 'view');
+    return this.audit.get(parse(z.coerce.number().int().positive(), id));
+  }
+
+  @Get('users')
+  async userList(@CurrentUser() user: AuthUser, @Query() query: unknown) {
+    await this.admin.require(user.id, 'view');
+    return this.users.list(parse(userListSchema, query));
+  }
+
+  @Get('users/:id')
+  async userDetail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.require(user.id, 'view');
+    return this.users.get(user.id, parse(uuidSchema, id));
+  }
+
+  @Post('users/:id/suspend')
+  @HttpCode(200)
+  async suspendUser(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    const role = await this.admin.require(user.id, 'manage_users');
+    return this.users.suspend(user.id, role, parse(uuidSchema, id), parse(suspendSchema, body).reason);
+  }
+
+  @Post('users/:id/reactivate')
+  @HttpCode(200)
+  async reactivateUser(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const role = await this.admin.require(user.id, 'manage_users');
+    return this.users.reactivate(user.id, role, parse(uuidSchema, id));
+  }
+
+  @Put('users/:id/platform-role')
+  async setUserRole(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    await this.admin.require(user.id, 'manage_roles');
+    return this.users.setRole(user.id, parse(uuidSchema, id), parse(userRoleSchema, body).role);
   }
 }
