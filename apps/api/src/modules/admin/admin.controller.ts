@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
+import { AuthGuard, AuthUser, CurrentUser, RequireAudience } from '../../common/auth';
 import { sendFile } from '../../common/upload';
 import { parse, uuidSchema } from '../../common/validation';
 import { AdminAuditService, auditQuerySchema } from './admin-audit.service';
@@ -12,6 +12,7 @@ import { adminBankSchema, AdminService, docRejectSchema, orgListSchema, orgSetti
 /** The platform's backoffice; every route checks the caller's platform role. */
 @Controller('admin')
 @UseGuards(AuthGuard)
+@RequireAudience('admin')
 export class AdminController {
   constructor(
     private readonly admin: AdminService,

@@ -1,11 +1,12 @@
 import { Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
-import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
+import { AuthGuard, AuthUser, CurrentUser, RequireAudience } from '../../common/auth';
 import { AdminService } from '../admin/admin.service';
 import { RetentionService } from './retention.service';
 
 /** Data retention for platform admins: what the daily job would erase now (dry run), and running it on demand. */
 @Controller('admin/retention')
 @UseGuards(AuthGuard)
+@RequireAudience('admin')
 export class RetentionController {
   constructor(
     private readonly admin: AdminService,
