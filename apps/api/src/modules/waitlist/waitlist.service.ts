@@ -4,6 +4,7 @@ import { AppConfig, CONFIG } from '../../config';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
 import { CheckoutService } from '../checkout/checkout.service';
+import { queueWaitlistOffers } from '../notifications/emails';
 
 /**
  * A queue per race for when it is full. Freed places are offered to the queue in order: an offer holds one of the
@@ -169,6 +170,7 @@ export class WaitlistService {
           [r.id, r.free, Math.round(hours * 3600)],
         );
         if (next.rowCount) await client.query('UPDATE races SET reserved = reserved + $2 WHERE id = $1', [r.id, next.rowCount]);
+        await queueWaitlistOffers(client, next.rows.map((n) => n.id));
         offered += next.rowCount ?? 0;
       }
       return offered;

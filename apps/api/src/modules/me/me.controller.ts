@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
@@ -38,6 +38,14 @@ export class MeController {
     private readonly results: ResultsService,
     private readonly rateLimit: RateLimitService,
   ) {}
+
+  /** The language the site is shown in; emails to this account follow it. */
+  @Put('locale')
+  async setLocale(@CurrentUser() user: AuthUser, @Body() body: unknown) {
+    const { locale } = parse(z.object({ locale: z.enum(['th', 'en']) }), body);
+    await this.dbs.pool.query('UPDATE users SET locale = $2, updated_at = now() WHERE id = $1 AND locale <> $2', [user.id, locale]);
+    return { locale };
+  }
 
   @Get('registrations')
   async registrations(@CurrentUser() user: AuthUser) {

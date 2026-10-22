@@ -1,9 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PoolClient } from 'pg';
+import { AppConfig, CONFIG } from '../../config';
 import { DbService } from '../../db/db.service';
 import { assignNextBib } from '../bibs/next-bib';
 import { settleChangeOrder } from '../changes/settle';
 import { InventoryService } from '../inventory/inventory.service';
+import { queueOrderPaid, queueRefundEmail } from '../notifications/emails';
+import { issueReceipt } from '../receipts/receipts.service';
 import { VerifiedWebhook } from './gateway';
 
 export type ConfirmationResult =
@@ -27,6 +30,7 @@ export class PaymentConfirmationService {
   constructor(
     private readonly dbs: DbService,
     private readonly inventory: InventoryService,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   async apply(gateway: string, event: VerifiedWebhook): Promise<ConfirmationResult> {
@@ -140,17 +144,23 @@ export class PaymentConfirmationService {
         WHERE w.checkout_session_id = $2 AND w.status = 'offered'`,
       [orderId, sessionId],
     );
-    // A transfer fee or race change order: the change happens now, or the money goes back if it no longer can.
-    if ((await settleChangeOrder(client, orderId)) === 'refund') await this.requestRefund(client, orderId, paymentId, 'change_not_possible');
+    // Every paid order gets its receipt now, numbered in this transaction.
+    await issueReceipt(client, orderId, this.config);
+    // A transfer fee or race change order: the change happens now (and emails about itself), or the money goes back
+    // if it no longer can. A plain registration gets the "payment received" email.
+    const settled = await settleChangeOrder(client, orderId);
+    if (settled === 'refund') await this.requestRefund(client, orderId, paymentId, 'change_not_possible');
+    if (settled === 'none') await queueOrderPaid(client, orderId);
   }
 
   private async requestRefund(client: PoolClient, orderId: string, paymentId: string, reason: string): Promise<void> {
     const amount = await client.query<{ amount_satang: string }>('SELECT amount_satang FROM payments WHERE id = $1', [paymentId]);
-    await client.query(
+    const refund = await client.query<{ id: string }>(
       `INSERT INTO refunds (order_id, payment_id, status, amount_satang, reason, release_inventory)
-       VALUES ($1, $2, 'approved', $3, $4, false)`,
+       VALUES ($1, $2, 'approved', $3, $4, false) RETURNING id`,
       [orderId, paymentId, amount.rows[0].amount_satang, reason],
     );
+    await queueRefundEmail(client, refund.rows[0].id, 'refund_approved');
     this.logger.warn(`refund queued for order ${orderId}: ${reason}`);
   }
 }

@@ -8,6 +8,7 @@ import { parse, uuidSchema } from '../../common/validation';
 import { MAX_RUNNERS_PER_ORDER } from '../checkout/checkout.service';
 import { PaymentsService } from '../payments/payments.service';
 import { orderConsentSchema } from '../privacy/privacy.service';
+import { billingSchema, ReceiptsService } from '../receipts/receipts.service';
 import { OrdersService } from './orders.service';
 import { phone, profileChoice, requireIdDoc, runnerOrProfileSchema } from './runner.schema';
 
@@ -15,7 +16,8 @@ const createOrderSchema = z.object({
   checkoutSessionId: z.string().uuid(),
   couponCode: z.string().trim().min(2).max(40).optional(),
   buyer: z.object({ name: z.string().trim().min(1).max(120), email: z.string().email(), phone }),
-  billing: z.record(z.unknown()).optional(),
+  /** Asks for a full tax invoice made out to these details once the order is paid. */
+  billing: billingSchema.optional(),
   participants: z
     .array(
       z
@@ -47,6 +49,7 @@ export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
     private readonly payments: PaymentsService,
+    private readonly receipts: ReceiptsService,
     private readonly idempotency: IdempotencyService,
     private readonly rateLimit: RateLimitService,
   ) {}
@@ -73,6 +76,19 @@ export class OrdersController {
   @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.orders.get(user.id, parse(uuidSchema, id));
+  }
+
+  /** The order's receipt or tax invoice, issued on payment. */
+  @Get(':id/receipt')
+  receipt(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.receipts.get(user.id, parse(uuidSchema, id));
+  }
+
+  /** Replaces the receipt with a full tax invoice made out to the buyer's details. */
+  @Post(':id/tax-invoice')
+  @RateLimit('order')
+  taxInvoice(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.receipts.requestTaxInvoice(user.id, parse(uuidSchema, id), parse(billingSchema, body));
   }
 
   @Post(':id/payments')

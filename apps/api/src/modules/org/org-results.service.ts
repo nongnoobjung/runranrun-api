@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { parseCsv } from '../../common/csv';
 import { ProblemException, problems } from '../../common/problem';
 import { DbService } from '../../db/db.service';
+import { queueResultsPublished } from '../notifications/emails';
 import { writeAudit } from './org-access.service';
 
 export const resultsImportSchema = z.object({
@@ -214,6 +215,8 @@ export class OrgResultsService {
         actorId: userId, organizationId: orgId, eventId, action: 'results.import', entityType: 'result_import', entityId: imp.rows[0].id,
         after: { rows: result.rows, matched: matched.length, warnings: warnings.length },
       });
+      // Results added to an event already published are live at once; their finishers hear about it like the rest.
+      if (published) await queueResultsPublished(client, eventId);
       return { ...result, applied: true };
     });
   }
@@ -228,6 +231,7 @@ export class OrgResultsService {
       ]);
       await client.query('UPDATE results SET is_published = $2 WHERE event_id = $1', [eventId, published]);
       await writeAudit(client, { actorId: userId, organizationId: orgId, eventId, action: published ? 'results.publish' : 'results.unpublish', entityType: 'event', entityId: eventId });
+      if (published) await queueResultsPublished(client, eventId);
       return this.summary(eventId, client);
     });
   }

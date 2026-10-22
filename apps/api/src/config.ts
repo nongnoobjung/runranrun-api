@@ -56,6 +56,18 @@ const schema = z.object({
   STORAGE_DRIVER: z.enum(['local']).default('local'),
   /** Directory for the local driver, relative to the working directory unless absolute. */
   STORAGE_LOCAL_DIR: z.string().min(1).default('storage'),
+  /**
+   * The platform's details, printed on receipts it issues for organisers that have not given a legal name and tax ID
+   * (receipts.service.ts). Without a tax ID the platform's documents are plain receipts with no VAT.
+   */
+  PLATFORM_LEGAL_NAME: z.string().trim().min(1).default('ก้าว (Kao)'),
+  PLATFORM_TAX_ID: z.string().regex(/^(\d{13})?$/, '13 digits').default(''),
+  PLATFORM_BRANCH: z.string().regex(/^\d{5}$/).default('00000'),
+  PLATFORM_ADDRESS: z.string().default(''),
+  PLATFORM_VAT_REGISTERED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   ENABLE_DEV_ENDPOINTS: z
     .enum(['true', 'false'])
     .default('false')
