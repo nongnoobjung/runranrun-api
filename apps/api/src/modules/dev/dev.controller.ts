@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppConfig, CONFIG } from '../../config';
+import { AUDIENCES } from '../../common/auth';
 import { ProblemException } from '../../common/problem';
 import { RateLimit } from '../../common/rate-limit';
 import { parse } from '../../common/validation';
@@ -36,14 +37,22 @@ export class DevController {
   @Post('login')
   @RateLimit('login')
   async login(@Body() body: unknown) {
-    const { email, displayName } = parse(z.object({ email: z.string().email(), displayName: z.string().max(80).optional() }), body);
+    const { email, displayName, audience } = parse(
+      z.object({
+        email: z.string().email(),
+        displayName: z.string().max(80).optional(),
+        // The front signing in. Tests may ask for several at once; the web app always names one.
+        audience: z.union([z.enum(AUDIENCES), z.array(z.enum(AUDIENCES)).nonempty()]).default('site'),
+      }),
+      body,
+    );
     const { rows } = await this.dbs.pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, last_login_at) VALUES ($1, $2, now())
        ON CONFLICT (email) DO UPDATE SET last_login_at = now()
        RETURNING id`,
       [email, displayName ?? null],
     );
-    const accessToken = await this.jwt.signAsync({ sub: rows[0].id });
+    const accessToken = await this.jwt.signAsync({ sub: rows[0].id, aud: audience });
     return { userId: rows[0].id, accessToken, expiresIn: this.config.JWT_TTL_SECONDS };
   }
 

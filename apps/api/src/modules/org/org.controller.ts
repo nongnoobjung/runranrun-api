@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { AuthGuard, AuthUser, CurrentUser } from '../../common/auth';
+import { AuthGuard, AuthUser, CurrentUser, RequireAudience } from '../../common/auth';
 import { IMAGE_MAX_BYTES } from '../../common/images';
 import { ProblemException } from '../../common/problem';
 import { readUpload, sendFile } from '../../common/upload';
@@ -39,6 +39,7 @@ const tierCreateSchema = tierFieldsSchema.partial().required({ name: true, price
 /** Organizer backoffice. Every route checks the caller's role in the organisation in the URL. */
 @Controller('org')
 @UseGuards(AuthGuard)
+@RequireAudience('organizer')
 export class OrgController {
   constructor(
     private readonly dbs: DbService,

@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { createApp } from '../src/app.factory';
 import { AppConfig, loadConfig } from '../src/config';
+import { Audience, AUDIENCES } from '../src/common/auth';
 import { DbService } from '../src/db/db.service';
 import { RedisService } from '../src/common/redis.service';
 import { createEvent, EventFixture } from '../db/fixtures';
@@ -68,8 +69,16 @@ export async function call<T = any>(
   return { status: res.statusCode, body: res.body ? JSON.parse(res.body) : undefined };
 }
 
-export async function login(app: NestFastifyApplication, email = `runner-${randomUUID()}@example.com`): Promise<{ token: string; userId: string }> {
-  const res = await call(app, 'POST', '/v1/dev/login', { body: { email } });
+/**
+ * A token for the runner site, the organiser backoffice and admin at once, so a test can play every part with one account.
+ * Pass an audience to sign in the way one front does (the web app always names exactly one).
+ */
+export async function login(
+  app: NestFastifyApplication,
+  email = `runner-${randomUUID()}@example.com`,
+  audience: Audience | Audience[] = [...AUDIENCES],
+): Promise<{ token: string; userId: string }> {
+  const res = await call(app, 'POST', '/v1/dev/login', { body: { email, audience } });
   if (res.status !== 201) throw new Error(`login failed: ${JSON.stringify(res.body)}`);
   return { token: res.body.accessToken, userId: res.body.userId };
 }

@@ -25,7 +25,7 @@ pnpm dev:api                         # http://localhost:4000/v1
 |---|---|
 | ดูงาน, ค้นหา (`q`, `province`, `month`, `type`, `distance` = short/10k/half/full/ultra, `open=1` เฉพาะที่เปิดรับและยังมีที่) | `GET /v1/events`, `GET /v1/events/filters` (จังหวัดและเดือนที่มีงาน), `GET /v1/events/:slug`, `GET /v1/events/:slug/availability` |
 | รูปบนหน้างาน (สาธารณะ, cache 1 ปี) | `GET /v1/media/event-images/:id.webp` (เว็บเสิร์ฟที่ `/media/*`) |
-| เข้าสู่ระบบ (ชั่วคราว) | `POST /v1/dev/login` (เปิดเฉพาะ `ENABLE_DEV_ENDPOINTS=true`) |
+| เข้าสู่ระบบ (ชั่วคราว) | `POST /v1/dev/login` (เปิดเฉพาะ `ENABLE_DEV_ENDPOINTS=true`) `{ email, audience? }` ได้ token ของหน้าบ้านนั้น (ดู "Token แยกตามหน้าบ้าน") |
 | จองที่ 15 นาที | `POST /v1/checkout/sessions`, `GET`/`DELETE /v1/checkout/sessions/:id` |
 | เลือก/เปลี่ยนไซซ์เสื้อ | `PUT /v1/checkout/sessions/:id/variants` (ก่อนสร้างคำสั่งซื้อ) |
 | สร้างคำสั่งซื้อ | `POST /v1/orders` (ต้องส่ง `Idempotency-Key`) |
@@ -37,9 +37,22 @@ pnpm dev:api                         # http://localhost:4000/v1
 | อีเมลที่คิวไว้ของที่อยู่หนึ่ง (dev เท่านั้น ยังไม่มีผู้ให้บริการอีเมลจริง) | `GET /v1/dev/emails?to=` |
 | ผลการแข่งขันรวมทุกงาน (`q` ชื่องาน), ค้นหานักวิ่งข้ามงานด้วยชื่อหรือบิบ, ผลของฉัน | `GET /v1/results`, `GET /v1/results/search?q=`, `GET /v1/me/results` |
 
+## Token แยกตามหน้าบ้าน
+
+เว็บมีสามหน้าบ้านคนละโดเมน (เว็บนักวิ่ง, backoffice ผู้จัดงาน, backoffice แอดมิน) แต่ละที่เข้าสู่ระบบแยกกัน token จึงมี `aud` บอกว่าออกให้หน้าบ้านไหน (`src/common/auth.ts`: `AUDIENCES`, `RequireAudience`)
+
+| `aud` | ใช้กับ |
+|---|---|
+| `site` | เว็บนักวิ่ง และ route ที่ไม่ได้จำกัด (รับ token ของทุกหน้าบ้านที่เข้าสู่ระบบแล้ว) |
+| `organizer` | `OrgController` (`/v1/org/*`) |
+| `admin` | `AdminController` และ `RetentionController` (`/v1/admin/*`) |
+
+- token ผิดหน้าบ้านได้ 401 (นับเป็นยังไม่เข้าสู่ระบบ backoffice จึงส่งไปหน้า login ของตัวเอง) · token ที่ออกก่อนมี `aud` นับเป็น `site`
+- `POST /v1/dev/login` รับ `audience` (`site` | `organizer` | `admin` ค่าเริ่มต้น `site`; ส่งเป็น array ได้ไว้ใช้ใน test) · เว็บส่งทีละหนึ่งค่าตามหน้าบ้านที่คนกำลังเข้าสู่ระบบ
+
 ## Backoffice ผู้จัดงาน
 
-ทุก endpoint อยู่ใต้ `/v1/org/:orgId` และตรวจบทบาทของผู้เรียกในทีมผู้จัดทุกครั้ง คนนอกทีมได้ 404
+ต้องใช้ token `organizer` ทุก endpoint อยู่ใต้ `/v1/org/:orgId` และตรวจบทบาทของผู้เรียกในทีมผู้จัดทุกครั้ง คนนอกทีมได้ 404
 
 | งาน | Endpoint | บทบาทที่ทำได้ |
 |---|---|---|
@@ -155,7 +168,7 @@ pnpm dev:api                         # http://localhost:4000/v1
 - **ข้อมูลผู้วิ่งที่บันทึกไว้:** `GET/POST /v1/me/profiles`, `PATCH/DELETE /v1/me/profiles/:id` บัญชีหนึ่งเก็บได้ 20 คน คนละเลขบัตร (`PROFILE_EXISTS`) และเป็น "ตัวฉัน" ได้คนเดียว
   - เลขบัตรเก็บเข้ารหัส ส่งกลับแค่ 4 ตัวท้าย ตอนสมัคร (`POST /v1/orders`) หรือรับโอน ส่ง `profileId` แทนเลขบัตรได้ API อ่านเลขจากโปรไฟล์เอง (ใช้ได้เฉพาะโปรไฟล์ของตัวเอง)
   - `saveProfile: true` ในผู้วิ่งแต่ละคนบันทึกเป็นโปรไฟล์ (เลขบัตรเดิมอัปเดตคนเดิม) สิทธิ์ที่สมัครผูก `runner_profile_id` ไว้ ลบโปรไฟล์แล้วลบจริง สิทธิ์ที่สมัครไปแล้วยังมีข้อมูลของตัวเอง
-- **Backoffice แอดมิน (`/v1/admin/*`):** ใช้ `users.platform_role` แต่ละบทบาททำได้ไม่เท่ากัน (403 ถ้าไม่มีสิทธิ์)
+- **Backoffice แอดมิน (`/v1/admin/*`):** ต้องใช้ token `admin` และใช้ `users.platform_role` แต่ละบทบาททำได้ไม่เท่ากัน (403 ถ้าไม่มีสิทธิ์)
   - support ดูอย่างเดียว, finance จ่ายเงินผู้จัด, admin / superadmin ทำได้ทุกอย่าง (`GET /v1/admin/me` บอกสิทธิ์)
   - ตรวจงาน: `GET /v1/admin/reviews`, `GET /v1/admin/events/:id`, `POST .../events/:id/approve` (ตรวจความพร้อมซ้ำแล้วเปิดทันที), `POST .../events/:id/reject` (`note` ให้ผู้จัด)
   - ผู้จัด: `GET /v1/admin/organizations?status=`, `GET .../organizations/:id` (ทีมงาน เอกสาร KYC บัญชีรับเงินแบบปิดเลข งาน)
@@ -199,7 +212,7 @@ pnpm dev:api                         # http://localhost:4000/v1
   - ทำทีละ `RETENTION_BATCH_SIZE` แถว (500) ต่อ transaction สั้น ๆ, `FOR UPDATE SKIP LOCKED`, ทำแล้วบันทึก `pii_erased_at` จึงรันซ้ำไม่มีผล, log จำนวนและบันทึก `audit_logs` (`retention.run`) ทุกรอบ
   - แอดมิน (admin / superadmin): `GET /v1/admin/retention` dry run บอกระยะเวลาที่ตั้ง จำนวนที่จะถูกลบตอนนี้ สิ่งที่เก็บไว้ และรอบล่าสุด, `POST /v1/admin/retention/run` รันทันที
   - เปลี่ยนระยะเวลาแล้วต้องแก้นโยบายความเป็นส่วนตัวบนเว็บ (`RETENTION` ใน `src/lib/legal.ts` ของ frontend) ให้ตรงกัน
-- **ผู้จัดตัวอย่าง:** `pnpm db:seed` สร้างบัญชี `organizer@riverside.example` เป็น owner ของผู้จัด Riverside (login ผ่าน `/v1/dev/login`)
+- **ผู้จัดตัวอย่าง:** `pnpm db:seed` สร้างบัญชี `organizer@riverside.example` เป็น owner ของผู้จัด Riverside (login ผ่าน `/v1/dev/login` ด้วย `audience: "organizer"`)
 
 ตอนพัฒนาใช้ `PAYMENT_GATEWAY=fake` แล้วจำลองการจ่ายด้วย
 `POST /v1/dev/fake-gateway/charges/:chargeId/complete` ซึ่งวิ่งผ่านโค้ดยืนยัน webhook ชุดเดียวกับของจริง
@@ -241,6 +254,7 @@ test สร้างฐานข้อมูลชั่วคราวบน Po
 - PDPA: บันทึกความยินยอมตอนสมัครและรับโอน (ต่อผู้สมัคร), ปฏิเสธเมื่อไม่ยอมรับ, ถอนความยินยอมรับข่าวสาร, ดาวน์โหลดข้อมูลไม่มีเลขบัตรเต็ม, ปิดบัญชี (ติดงานที่ยังไม่แข่ง / เจ้าของทีมคนสุดท้าย / สำเร็จแล้ว token ใช้ไม่ได้)
 - data retention: ลบเฉพาะงานที่จบเกินระยะ (งานที่ยังไม่ครบไม่ถูกแตะ), ชื่อ บิบ ผลที่ค้นได้ ประวัติรับของ และยอดเงินยังอยู่, order ที่ไม่จ่ายเกินระยะ, การโอนที่ไม่สำเร็จ, บัญชีที่ปิดเกินระยะ (ยังไม่ครบไม่ลบ), ไฟล์ KYC (ลบไฟล์จริง + audit), consent และ audit log ไม่ลด, dry run นับตรงกับที่ลบจริง, รันซ้ำไม่เปลี่ยนอะไร, ทำทีละ batch, สิทธิ์ (support / ผู้ใช้ทั่วไป 403)
 - เนื้อหาและรูปงาน: ข้อความสองภาษาและ FAQ ไปกลับครบ, Markdown เก็บตามที่พิมพ์, ปกย่อเป็น WebP คงสัดส่วนและแทนรูปเดิม, หมุนตาม EXIF และตัด EXIF, แกลเลอรีเรียง/คำบรรยาย/รูปของงานอื่น, ลบรูป, แผนที่เส้นทาง, ชนิดไฟล์ (PDF, GIF, ไฟล์เสีย, เกิน 10 MB, ไม่มีไฟล์), สิทธิ์ (staff/finance/viewer, คนนอก, ไม่ login) + audit, route รูปสาธารณะและ cache header
+- token แยกตามหน้าบ้าน (`test/audience.e2e.spec.ts`): token `site` เข้า `/v1/org` และ `/v1/admin` ไม่ได้ (401) แต่ละ audience เข้าได้เฉพาะของตัวเอง token เก่าที่ไม่มี `aud` นับเป็น `site` (`login()` ใน test ขอครบทั้งสาม audience เพื่อให้ test เล่นได้ทุกบทบาท)
 - แอดมิน: สิทธิ์ตามบทบาท, งานแรกรอตรวจ/ส่งกลับ/อนุมัติ แล้วผู้จัดเปิดเองได้, KYC อนุมัติ/ระงับ/คืนสิทธิ์, บัญชีรับเงิน, รอบจ่ายต่อเนื่อง (ต้องมีบัญชี, โอนแล้วผู้จัดเห็น, ยกเลิกรอบแล้วยอดไปรอบถัดไป)
 - เครื่องมือแอดมิน: สิทธิ์ค่าธรรมเนียมตามบทบาท, เปลี่ยนอัตราแล้วคำสั่งซื้อใหม่เท่านั้นที่ใช้อัตราใหม่ (ตั้งเวลา/แทนที่/กลับไปใช้ default, ประวัติ), กรองบันทึก (ผู้จัด งาน อีเมลผู้ทำ action วันที่ หน้า) และไม่แสดงเลขผู้เสียภาษี/เบอร์โทรเต็ม, ค้นหาผู้ใช้และรายละเอียด, ระงับแล้ว 401 และคืนสิทธิ์, เฉพาะ superadmin เปลี่ยนสิทธิ์และระงับทีมงาน, แก้ตัวเองไม่ได้, superadmin คนสุดท้าย (รวมสองคนลดสิทธิ์กันพร้อมกัน)
 - ข้อมูลผู้วิ่ง: ไม่ส่งเลขบัตรกลับ, เลขบัตรซ้ำ, ตัวฉันคนเดียว, ของคนอื่นแก้/ลบ/ใช้สมัครไม่ได้, สมัครด้วยโปรไฟล์โดยไม่ส่งเลขบัตร, บันทึกตอนสมัครและอัปเดตคนเดิม
