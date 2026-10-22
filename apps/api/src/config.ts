@@ -6,7 +6,7 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   DATABASE_POOL_SIZE: z.coerce.number().int().positive().default(20),
   REDIS_URL: z.string().url().optional(),
-  /** Prepended to the rate limit, waiting room and data retention job keys, so environments can share one Redis. */
+  /** Prepended to the rate limit, waiting room and BullMQ job keys, so environments can share one Redis. */
   REDIS_KEY_PREFIX: z.string().default('kao:'),
   JWT_SECRET: z.string().min(32),
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(3600),

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdo
 import { Queue, Worker } from 'bullmq';
 import { Client, PoolClient } from 'pg';
 import { z } from 'zod';
+import { bullOptions } from '../../common/bullmq';
 import { AppConfig, CONFIG } from '../../config';
 import { DbService } from '../../db/db.service';
 import { EMAIL_SENDER, EmailSender } from './email-sender';
@@ -105,8 +106,8 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
       this.retryTimer.unref();
       return;
     }
-    const connection = { url: this.config.REDIS_URL };
-    this.queue = new Queue(QUEUE, { connection });
+    const bull = bullOptions(this.config);
+    this.queue = new Queue(QUEUE, bull);
     await this.queue.upsertJobScheduler(SEND_DUE, { every: 30_000 }, { name: SEND_DUE });
     this.worker = new Worker(
       QUEUE,
@@ -115,7 +116,7 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
         if (job.name === SEND_DUE) return { started: await this.sendDue(), transactional: await this.flush() };
         return null;
       },
-      { connection, concurrency: 2 },
+      { ...bull, concurrency: 2 },
     );
     this.worker.on('failed', (job, err) => this.logger.error(`job ${job?.name} failed: ${err.message}`));
   }
