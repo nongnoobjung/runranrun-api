@@ -64,7 +64,8 @@ export class OrgAccessService {
 
 export interface AuditEntry {
   actorId: string;
-  organizationId: string;
+  /** null for platform-wide changes (the default platform fee, user accounts). */
+  organizationId: string | null;
   eventId?: string | null;
   action: string;
   entityType: string;
