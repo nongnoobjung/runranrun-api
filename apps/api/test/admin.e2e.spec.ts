@@ -57,7 +57,7 @@ describe('admin backoffice', () => {
     const support = await login(ctx.app, supportEmail);
     expect((await call(ctx.app, 'GET', '/v1/admin/me', { token: support.token })).body).toEqual({
       role: 'support',
-      can: { view: true, review_events: false, manage_orgs: false, payouts: false, fees: false, manage_users: false, manage_roles: false },
+      can: { view: true, review_events: false, manage_orgs: false, payouts: false, retention: false, fees: false, manage_users: false, manage_roles: false },
     });
     expect((await call(ctx.app, 'GET', '/v1/admin/reviews', { token: support.token })).status).toBe(200);
     expect((await call(ctx.app, 'GET', '/v1/admin/payouts', { token: support.token })).status).toBe(403);

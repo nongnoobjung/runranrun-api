@@ -20,6 +20,7 @@ const PERMISSIONS = {
   review_events: ['admin', 'superadmin'],
   manage_orgs: ['admin', 'superadmin'],
   payouts: ['finance', 'admin', 'superadmin'],
+  retention: ['admin', 'superadmin'],
   fees: ['finance', 'admin', 'superadmin'],
   manage_users: ['admin', 'superadmin'],
   manage_roles: ['superadmin'],
